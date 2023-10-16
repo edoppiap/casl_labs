@@ -12,7 +12,7 @@ SERVICE = 1.0
 SIM_TIME = 200
 
 # Maximum capacity of the queue
-MAX_QUEUE_CAPACITY = 100
+MAX_QUEUE_CAPACITY = 150
 
 # 
 TYPE1 = 'Client1'
@@ -45,8 +45,9 @@ class Client:
 # here we store the clients in the queue
 # this implements a FIFO structures (first in - first out)
 class Queue:
-    def __init__(self):
+    def __init__(self, capacity):
         self.queue = []
+        self.capacity = capacity
         
     def pop(self): # this will return and delete the first element from the queue
         return self.queue.pop(0)
@@ -56,8 +57,8 @@ class Queue:
             self.queue.append(client)
             
     def is_full(self):
-        return len(self.queue) >= MAX_QUEUE_CAPACITY
-        
+        return len(self.queue) >= self.capacity
+    
 # here we store the events that are ment to appen
 class PriorityQueue: # this is a list of events in the form: (time,type)
     def __init__(self):
@@ -70,7 +71,7 @@ class PriorityQueue: # this is a list of events in the form: (time,type)
                 index = i
                 break
         if index is not None:
-            self.events = self.events[:index] + [el] + self.events[index:]
+            self.events.insert(i,el)
         else:
             self.events.append(el)
         
@@ -150,7 +151,7 @@ users = 0
 servers = k
 
 FES = PriorityQueue()
-queue = Queue()
+queue = Queue(MAX_QUEUE_CAPACITY)
 
 # Initialize cumulative arrivals for each lambda
 cumulative_arrivals = [0] * len(arrival_lambdas)
@@ -191,7 +192,7 @@ while data.num_departures < n_clients:
 average_delay = data.average_deley_time/data.num_departures
 average_no_cust = data.average_utilization/time
 
-print(f'Total number of clients: {data.num_arrivals}\nMax queue capacity: {MAX_QUEUE_CAPACITY}')
+print(f'Number of clients \ number of departures: {data.num_arrivals} \ {data.num_departures}\nMax queue capacity: {MAX_QUEUE_CAPACITY}')
 print(f'Average time spent waiting: {average_delay:.2f}s\nAverage number of customers in the system: {average_no_cust:.2f}')
 print(f'Dropped clients: {data.num_dropped} (Dropping probability: {data.num_dropped / n_clients * 100:.2f}%)')
 # print(f'Number of clients in the system at the end: {n_clients - data.num_departures}')
