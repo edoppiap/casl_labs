@@ -18,8 +18,7 @@ MAX_QUEUE_CAPACITY = 1000
 TYPE1 = 'Client1'
 TYPE2 = 'Client2'
 
-k = 10
-n_clients = 1000 # fixed number of clients
+k = 10 # number of servers
 
 # half a page of a pdf with the results and a comment
 # what will be the condition which I choose
@@ -176,7 +175,7 @@ def simulate(lambd, queue_lenght = 1000):
 
     print(f'Number of clients \ number of departures: {data.num_arrivals} \ {data.num_departures}')
     print(f'Average time spent waiting: {average_delay:.2f}s\nAverage number of customers in the system: {average_no_cust:.2f}')
-    print(f'Dropped clients: {data.num_dropped} (Dropping probability: {data.num_dropped / n_clients * 100:.2f}%)')
+    print(f'Dropped clients: {data.num_dropped} (Dropping probability: {data.num_dropped / data.num_arrivals * 100:.2f}%)')
     print(f'Number of clients in the system at the end: {data.num_arrivals - data.num_departures}')
 
 for lambd in arrival_lambdas:
