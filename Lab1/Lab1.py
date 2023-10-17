@@ -12,7 +12,7 @@ SERVICE = 1.0
 SIM_TIME = 200
 
 # Maximum capacity of the queue
-MAX_QUEUE_CAPACITY = 150
+MAX_QUEUE_CAPACITY = 1000
 
 # 
 TYPE1 = 'Client1'
@@ -78,8 +78,9 @@ class PriorityQueue: # this is a list of events in the form: (time,type)
     def get(self):
         return self.events.pop(0)
 
-def arrival(time, FES, queue, data):
-    global users, servers
+def arrival(time, FES, queue, data, lambd):
+    global users
+    global servers
     
     # Create data for measuring simulation
     data.num_arrivals += 1
@@ -87,11 +88,10 @@ def arrival(time, FES, queue, data):
     data.time_last_event = time
     
     # compute the inter-arrival time Tia for next client
-    # this is not needed if I schedule all arrival from the start
-    #inter_arrival = random.expovariate(1.0/ARRIVAL) # TODO
+    inter_arrival = random.expovariate(lambd)
     
     # schedule an arrival at time Tcurr + Tia
-    # FES.put((time + inter_arrival, "arrival"))
+    FES.put((time + inter_arrival, "arrival"))
     
     # Create a record for the client
     client = Client(TYPE1,time)
@@ -111,14 +111,15 @@ def arrival(time, FES, queue, data):
         client = queue.pop()
         data.average_deley_time += (time - client.arrival_time)
         # determine the service time Ts
-        service_time = random.expovariate(1.0 / SERVICE)
+        service_time = random.expovariate(SERVICE)
         servers -= 1 # this is for saying that the server is busy
         
         # schedule the end of service at time Tcurr + Ts
         FES.put((time + service_time, 'departure'))
 
 def departure(time, FES, queue, data):
-    global users, servers
+    global users
+    global servers
     
     data.num_departures += 1
     data.average_utilization += users*(time - data.time_last_event)
@@ -136,63 +137,51 @@ def departure(time, FES, queue, data):
         
         data.average_deley_time += (time - client.arrival_time)
         
-        service_time = random.expovariate(1.0/SERVICE)
+        service_time = random.expovariate(SERVICE)
         
         FES.put((time + service_time, 'departure'))
         
     
     #print(f'Clients in queue: {len(queue.queue)} clients in the system: {users} available servers: {servers} departure')
 
-# Event Loop
-
-# Initialization
-data = Measure(0,0,0,0,0,0)
-users = 0
-servers = k
-
-FES = PriorityQueue()
-queue = Queue(MAX_QUEUE_CAPACITY)
-
-# Initialize cumulative arrivals for each lambda
-cumulative_arrivals = [0] * len(arrival_lambdas)
-
-# Schedule arrival events for each λ value
-for i, lambd in enumerate(arrival_lambdas):
-    for _ in range(n_clients // len(arrival_lambdas)):
-        # Generate inter-arrival time for this type
-        interarrival_time = random.expovariate(1.0 / lambd)
-        
-        # Schedule the arrival event with the corresponding inter-arrival time
-        FES.put((cumulative_arrivals[i] + interarrival_time, 'arrival'))
-        
-        # Update cumulative arrivals for this type
-        cumulative_arrivals[i] += interarrival_time
-
-# FES.put((0, "arrival"))
-
-# we have a fixed number of clients so the simulation will run untils they ends
-# Event Loop
-events = []
-while data.num_departures < n_clients:
-    if not FES.events:
-        break
-
-    (time, event_type) = FES.get()
-    events.append((time,event_type))
+def simulate(lambd, queue_lenght = 1000):
     
-    if event_type == 'arrival':
-        arrival(time, FES, queue, data)
-    elif event_type == 'departure':
-        departure(time, FES, queue, data)
+    # Event Loop
+
+    # Initialization
+    data = Measure(0,0,0,0,0,0)
+    time = 0
+
+    FES = PriorityQueue()
+    queue = Queue(queue_lenght)
+
+    FES.put((time, "arrival"))
+
+    # we have a fixed number of clients so the simulation will run untils they ends
+    # Event Loop
+    while time < SIM_TIME:
+        if not FES.events:
+            break
+
+        (time, event_type) = FES.get()
         
-    if True:
-        True
+        if event_type == 'arrival':
+            arrival(time, FES, queue, data, lambd)
+        elif event_type == 'departure':
+            departure(time, FES, queue, data)
 
-# end of the simulation
-average_delay = data.average_deley_time/data.num_departures
-average_no_cust = data.average_utilization/time
+    # end of the simulation
+    average_delay = data.average_deley_time/data.num_departures
+    average_no_cust = data.average_utilization/time
 
-print(f'Number of clients \ number of departures: {data.num_arrivals} \ {data.num_departures}\nMax queue capacity: {MAX_QUEUE_CAPACITY}')
-print(f'Average time spent waiting: {average_delay:.2f}s\nAverage number of customers in the system: {average_no_cust:.2f}')
-print(f'Dropped clients: {data.num_dropped} (Dropping probability: {data.num_dropped / n_clients * 100:.2f}%)')
-# print(f'Number of clients in the system at the end: {n_clients - data.num_departures}')
+    print(f'Number of clients \ number of departures: {data.num_arrivals} \ {data.num_departures}')
+    print(f'Average time spent waiting: {average_delay:.2f}s\nAverage number of customers in the system: {average_no_cust:.2f}')
+    print(f'Dropped clients: {data.num_dropped} (Dropping probability: {data.num_dropped / n_clients * 100:.2f}%)')
+    print(f'Number of clients in the system at the end: {data.num_arrivals - data.num_departures}')
+
+for lambd in arrival_lambdas:
+    
+    users = 0
+    servers = k
+    print(f'\n\nStarting simulation with arrival lambda = {lambd}')
+    simulate(queue_lenght=MAX_QUEUE_CAPACITY, lambd=lambd)
