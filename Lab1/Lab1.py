@@ -1,4 +1,5 @@
 import random
+import matplotlib.pyplot as plt
 
 # arrival process of customers is a poisson process a rate lambda in [5,7,9,10,12,15] (i.e. interarrivals are exponentially distributed with average 1/lambda)
 # this means that the arrival process is not a singular exponential distribution but in fact are 6 different distribution
@@ -6,10 +7,9 @@ import random
 arrival_lambdas = [5,7,9,10,12,15]
 
 # service times are exponentially distributed with average 1
-SERVICE = 1.0 
+SERVICE = 1.0
 
-# this is not needed since we have a fixed number of clients to be served
-SIM_TIME = 200
+SIM_TIME = 2_000
 
 # Maximum capacity of the queue
 MAX_QUEUE_CAPACITY = 1000
@@ -32,7 +32,7 @@ class Measure:
         self.num_departures = Ndep
         self.average_utilization = NAverageUser
         self.time_last_event = OldTimeEvent
-        self.average_deley_time = AverageDelay
+        self.average_delay_time = AverageDelay
         self.num_dropped = Dropped
 
 # this class is the representation of a client
@@ -48,7 +48,7 @@ class Queue:
         self.queue = []
         self.capacity = capacity
         
-    def pop(self): # this will return and delete the first element from the queue
+    def get(self): # this will return and delete the first element from the queue
         return self.queue.pop(0)
     
     def append(self,client):
@@ -95,26 +95,25 @@ def arrival(time, FES, queue, data, lambd):
     # Create a record for the client
     client = Client(TYPE1,time)
     
-    # Insert the record in the queue
-    if not queue.is_full():
-        users += 1
-        #print(f'Clients in queue: {len(queue.queue)} clients in the system: {users} available servers: {servers} full = False')
-        queue.append(client)
-    else:
-        # print(f'Clients in queue: {len(queue.queue)} clients in the system: {users} available servers: {servers}')
-        data.num_dropped += 1
+    users += 1
     
     # If the server is idle -> make the server busy
-    # this means that a client can be removed from the queue (?)
     if servers >= 1:
-        client = queue.pop()
-        data.average_deley_time += (time - client.arrival_time)
         # determine the service time Ts
         service_time = random.expovariate(SERVICE)
         servers -= 1 # this is for saying that the server is busy
         
         # schedule the end of service at time Tcurr + Ts
         FES.put((time + service_time, 'departure'))
+    else: # add the client to the queue
+        # Insert the record in the queue
+        if not queue.is_full():
+            queue.append(client)
+            #print(f'Clients in queue: {len(queue.queue)} clients in the system: {users} available servers: {servers} full = False')
+        else:
+            #print(f'Clients in queue: {len(queue.queue)} clients in the system: {users} available servers: {servers} full = True')
+            data.num_dropped += 1
+            users -= 1
 
 def departure(time, FES, queue, data):
     global users
@@ -126,24 +125,22 @@ def departure(time, FES, queue, data):
     
     users -= 1
     
-    #if servers < 10:
-    servers += 1 # this is for saying that the server is back idel
-    #print(servers)
-    
     # this means that a client is waiting and can be processed (so it will live after service_time)
     if len(queue.queue) > 0:
-        client = queue.pop()
+        client = queue.get()
         
-        data.average_deley_time += (time - client.arrival_time)
+        data.average_delay_time += (time - client.arrival_time)
         
         service_time = random.expovariate(SERVICE)
-        
+                
         FES.put((time + service_time, 'departure'))
+    else:
+        servers +=1 # this is for saying that the server is back idle
         
     
     #print(f'Clients in queue: {len(queue.queue)} clients in the system: {users} available servers: {servers} departure')
 
-def simulate(lambd, queue_lenght = 1000):
+def simulate(lambd, queue_lenght):
     
     # Event Loop
 
@@ -170,17 +167,43 @@ def simulate(lambd, queue_lenght = 1000):
             departure(time, FES, queue, data)
 
     # end of the simulation
-    average_delay = data.average_deley_time/data.num_departures
+    average_delay = data.average_delay_time/data.num_departures
     average_no_cust = data.average_utilization/time
 
     print(f'Number of clients \ number of departures: {data.num_arrivals} \ {data.num_departures}')
-    print(f'Average time spent waiting: {average_delay:.2f}s\nAverage number of customers in the system: {average_no_cust:.2f}')
+    print(f'Average time spent waiting: {average_delay:.4f}s\nAverage number of customers in the system: {average_no_cust:.2f}')
     print(f'Dropped clients: {data.num_dropped} (Dropping probability: {data.num_dropped / data.num_arrivals * 100:.2f}%)')
     print(f'Number of clients in the system at the end: {data.num_arrivals - data.num_departures}')
+    
+    return average_delay,average_no_cust,data
 
+datas = []
 for lambd in arrival_lambdas:
     
     users = 0
     servers = k
     print(f'\n\nStarting simulation with arrival lambda = {lambd}')
-    simulate(queue_lenght=MAX_QUEUE_CAPACITY, lambd=lambd)
+    datas.append(simulate(queue_lenght=MAX_QUEUE_CAPACITY, lambd=lambd))
+    
+plt.figure(figsize=(12,6))
+
+plt.plot([lambd for lambd in arrival_lambdas], [data[1] for data in datas], label='Number', color='blue', marker='o', linestyle='-', markersize=5)
+
+plt.ylabel('Average Number of Customer')
+plt.xlabel('Lambdas')
+plt.xticks(range(arrival_lambdas[0],arrival_lambdas[-1]+1))
+plt.title('Average number of clients in the system and lambdas')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+plt.figure(figsize=(12,6))
+
+plt.plot([lambd for lambd in arrival_lambdas], [(data[2].num_dropped / data[2].num_arrivals) for data in datas], label = 'Number', color='red', marker='o', linestyle='-', markersize=5)
+
+plt.ylabel('Dropping probability')
+plt.xlabel('lambdas')
+plt.xticks(range(arrival_lambdas[0],arrival_lambdas[-1]+1))
+plt.title('Dropping probabilities and lambdas')
+plt.grid(True)
+plt.show()
