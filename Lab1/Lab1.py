@@ -9,6 +9,7 @@ arrival_lambdas = [5,7,9,10,12,15]
 # service times are exponentially distributed with average 1
 SERVICE = 1.0
 
+# the simulation time must be great enough to capture the saturaion of the system
 SIM_TIME = 2_000
 
 # Maximum capacity of the queue
@@ -63,6 +64,8 @@ class PriorityQueue: # this is a list of events in the form: (time,type)
     def __init__(self):
         self.events = []
     
+    # this implements the insertion sort algorithm
+    # which keeps the list sorted
     def put(self,el):
         index = None
         for i,event in enumerate(self.events):
@@ -105,13 +108,14 @@ def arrival(time, FES, queue, data, lambd):
         
         # schedule the end of service at time Tcurr + Ts
         FES.put((time + service_time, 'departure'))
+        
     else: # add the client to the queue
-        # Insert the record in the queue
+        
         if not queue.is_full():
+            # Insert the record in the queue
             queue.append(client)
-            #print(f'Clients in queue: {len(queue.queue)} clients in the system: {users} available servers: {servers} full = False')
         else:
-            #print(f'Clients in queue: {len(queue.queue)} clients in the system: {users} available servers: {servers} full = True')
+            # drop the client because the queue is at capacity
             data.num_dropped += 1
             users -= 1
 
@@ -125,7 +129,7 @@ def departure(time, FES, queue, data):
     
     users -= 1
     
-    # this means that a client is waiting and can be processed (so it will live after service_time)
+    # this means that a client is waiting and can be processed (so it will departure after service_time)
     if len(queue.queue) > 0:
         client = queue.get()
         
@@ -134,15 +138,13 @@ def departure(time, FES, queue, data):
         service_time = random.expovariate(SERVICE)
                 
         FES.put((time + service_time, 'departure'))
-    else:
-        servers +=1 # this is for saying that the server is back idle
         
-    
-    #print(f'Clients in queue: {len(queue.queue)} clients in the system: {users} available servers: {servers} departure')
+    else:
+        # the queue is empty
+        servers +=1 # this is for saying that the server is back idle
 
+# Event Loop
 def simulate(lambd, queue_lenght):
-    
-    # Event Loop
 
     # Initialization
     data = Measure(0,0,0,0,0,0)
@@ -153,7 +155,6 @@ def simulate(lambd, queue_lenght):
 
     FES.put((time, "arrival"))
 
-    # we have a fixed number of clients so the simulation will run untils they ends
     # Event Loop
     while time < SIM_TIME:
         if not FES.events:
@@ -177,7 +178,8 @@ def simulate(lambd, queue_lenght):
     
     return average_delay,average_no_cust,data
 
-datas = []
+datas = [] # this is for performing some plot after the simulation
+# we run a simulation for each arrival_lambdas
 for lambd in arrival_lambdas:
     
     users = 0
@@ -189,21 +191,21 @@ plt.figure(figsize=(12,6))
 
 plt.plot([lambd for lambd in arrival_lambdas], [data[1] for data in datas], label='Number', color='blue', marker='o', linestyle='-', markersize=5)
 
-plt.ylabel('Average Number of Customer')
-plt.xlabel('Lambdas')
+plt.ylabel('Average Number of Customer', fontsize=14)
+plt.xlabel('Lambdas', fontsize=14)
 plt.xticks(range(arrival_lambdas[0],arrival_lambdas[-1]+1))
-plt.title('Average number of clients in the system and lambdas')
-plt.legend()
+plt.title('Average number of clients in the system and lambdas', fontsize=16)
 plt.grid(True)
 plt.show()
 
 plt.figure(figsize=(12,6))
 
-plt.plot([lambd for lambd in arrival_lambdas], [(data[2].num_dropped / data[2].num_arrivals) for data in datas], label = 'Number', color='red', marker='o', linestyle='-', markersize=5)
+plt.plot([lambd for lambd in arrival_lambdas], [(data[2].num_dropped / data[2].num_arrivals) for data in datas], \
+    label = 'Number', color='red', marker='o', linestyle='-', markersize=5)
 
-plt.ylabel('Dropping probability')
-plt.xlabel('lambdas')
+plt.ylabel('Dropping probability', fontsize=14)
+plt.xlabel('lambdas', fontsize=14)
 plt.xticks(range(arrival_lambdas[0],arrival_lambdas[-1]+1))
-plt.title('Dropping probabilities and lambdas')
+plt.title('Dropping probabilities and lambdas', fontsize=16)
 plt.grid(True)
 plt.show()
