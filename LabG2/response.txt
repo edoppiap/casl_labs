@@ -1,0 +1,24 @@
+Input parameters:
+
+N = number of experiments. This property is the output of the stochastic process we want to study, it is uniformed distributed between 0 and 10.
+C = confidence level. This is the probability that the estimate of the average is correct. 
+Adopted formulas:
+
+Sample mean: \mu = \frac{1}{2} \sum_{i=1}^{n} x_i
+Standard deviation: \sigma = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (x_i - \mu)^2}
+Standard error: SE = \frac{\sigma}{\sqrt{n}}
+Relative error: RE = \frac{MOE}{2 \cdot |\mu|}
+Accuracy: acc = 1 - RE
+Python function:
+
+Since the generated values come from the numpy library and are a numpy array, it is possible to call the mean() and std(ddof=1) functions directly on the array, which will return the population mean and standard deviation respectively. I specified the degree of freedom for the correct calculation of the standard deviation.
+For the intervals, I used the t.intervals function from the scipy stats library. It takes as input the desired confidence level, the degrees of freedom, the centre of the distribution (the mean) and the spread of the distribution (in this case the standard error). It returns an interval as a coupla.
+
+Plots: 
+
+Plots of the output analysis
+
+Graph (a) shows that the higher the confidence level, the lower the accuracy. This makes sense, because the more you want the confidence error to be the smallest, the more likely it is that some real value will be left out. 
+Graph (b) shows how the confidence intervals grow as the confidence level increases. This is the desirable behaviour because the larger the interval, the more you increase the range of possible values it contains. 
+Graph (c) shows how the precision increases as the number of trials (number of samples) increases. This is due to the law of large numbers (LLN), the more experiments we do, the closer the estimate will be to the real average. 
+Graph (d) shows how the confidence intervals became narrower as the number of experiments increased. This is also in line with the LLM, as a more precise estimate leads to the best confidence in the population parameter. 
