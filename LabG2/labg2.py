@@ -15,81 +15,86 @@ def calculate_confidence_interval(X,C):
     
     MOE = interval[1] - interval[0]
     re = (MOE / (2 * abs(mean))) # this is the relative error
-    
-    return interval,re
+    acc = 1 - re # this is the accuracy
+    return interval,acc
 
 def simulate(n_sample=100_000):
-    Ns = np.arange(100,n_sample,1000)
-    Cs = np.arange(.85,.99,.02)
+    Ns = np.arange(100, # start value
+                   n_sample, # end value (not included)
+                   1000) # jump between values
+    Cs = np.arange(.75,1,.03)
 
-    results = np.empty((len(Ns) * len(Cs), 5), dtype=np.float64)
+    # this matrix will store the results
+    # [(n_samples con_level accuracy lower_bound upper_bound)]
+    results_mat = np.empty((len(Ns) * len(Cs), 5), dtype=np.float64)
     
     i = 0
     for N in Ns:
         for C in Cs:
             X = np.random.uniform(0, 10, N)
-            interval, re = calculate_confidence_interval(X, C=C)
-            results[i] = [N, C, 1 - re, interval[0], interval[1]]
+            interval, acc = calculate_confidence_interval(X, C=C)
+            results_mat[i] = [N, C, acc, interval[0], interval[1]]
             i += 1
     
-    return results
-
-def plot_graphs(results, n=None, c=None):
-    N = results[:,0]
-    C = results[:,1]
-    accs = results[:,2]
-    starts = results[:,3]
-    ends = results[:,4]
+    return results_mat
+    
+def plot_graphs(results_mat, n=None, c=None):
+    N = results_mat[:, 0]
+    C = results_mat[:, 1]
+    accs = results_mat[:, 2]
+    lowers = results_mat[:, 3]
+    uppers = results_mat[:, 4]
     
     unique_c = np.unique(C)
     
-    if n == None:
-        n = np.random.choice(N,1)[0]
-    if c == None:
+    if n is None:
+        n = np.random.choice(N, 1)[0]
+    if c is None:
         c = np.random.choice(unique_c)
     
-    plt.figure(figsize=(10, 6))
-    n = np.random.choice(N,1)[0]
-    mask = N == n
-    plt.plot(C[mask], accs[mask], linestyle='-', marker='o')
-    plt.title(f'Confidence level vs. Accuracy with number of samples = {n}')
-    plt.xlabel('Confidence level')
-    plt.xticks(np.unique(C))
-    plt.ylabel('Accuracy')
-    plt.grid(True)
-    plt.show()
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
     
-    plt.figure(figsize=(10,6))
-    plt.plot(C[mask], starts[mask], label=f'Lower bound')
-    plt.plot(C[mask], ends[mask], label=f'Upper bound')
-    plt.title(f'Confidence level vs Interval for N = {n}')
-    plt.xlabel('Confidence level')
-    plt.ylabel('Interval')
-    plt.legend(loc='upper right')
-    plt.grid(True)
-    #plt.savefig("LabG2/output.png", dpi=300, bbox_inches='tight')
-    plt.show()
+    # Plot 1: Confidence level vs. Accuracy
+    mask = np.isclose(N,n)
+    axes[0, 0].plot(C[mask], accs[mask], linestyle='-', marker='o')
+    axes[0, 0].set_title(f'Confidence level vs. Accuracy with number of samples = {n}')
+    axes[0, 0].set_xlabel('Confidence level')
+    axes[0, 0].set_xticks(np.unique(C))
+    axes[0, 0].set_ylabel('Accuracy')
+    axes[0, 0].grid(True)
     
-    plt.figure(figsize=(10,6))
-    mask = C == c
-    plt.plot(N[mask], accs[mask], linestyle='-')
-    plt.title(f'Number of samples vs. Accuracy for C = {c:.2}')
-    plt.xlabel('Number of samples')
-    plt.ylabel('Accuracy')
-    plt.grid(True)
-    plt.show()
+    # Plot 2: Confidence level vs. Interval for N = n
+    axes[0, 1].plot(C[mask], uppers[mask], label='Upper bound', linestyle='-', marker='o')
+    axes[0, 1].plot(C[mask], lowers[mask], label='Lower bound', linestyle='-', marker='o')
+    axes[0, 1].set_title(f'Confidence level vs Intervals for N = {n}')
+    axes[0, 1].set_xlabel('Confidence level')
+    axes[0, 1].set_xticks(np.unique(C))
+    axes[0, 1].set_ylabel('Intervals')
+    axes[0, 1].legend(loc='upper right')
+    axes[0, 1].grid(True)
     
-    plt.figure(figsize=(10,6))
-    plt.plot(N[mask], starts[mask], label=f'Lower bound')
-    plt.plot(N[mask], ends[mask], label=f'Upper bound')
-    plt.title(f'Numbers of samples vs Interval for C = {c:.2}')
-    plt.xlabel('Number of samples')
-    plt.ylabel('Interval')
-    plt.legend(loc='upper right')
-    plt.grid(True)
-    #plt.savefig("LabG2/output.png", dpi=300, bbox_inches='tight')
+    # Plot 3: Number of samples vs. Accuracy
+    mask = np.isclose(C,c)
+    axes[1, 0].plot(N[mask], accs[mask], linestyle='-')
+    axes[1, 0].set_title(f'Number of samples vs. Accuracy for C = {c:.2}')
+    axes[1, 0].set_xlabel('Number of samples')
+    axes[1, 0].set_ylabel('Accuracy')
+    axes[1, 0].grid(True)
+    
+    # Plot 4: Number of samples vs. Interval for C = c
+    axes[1, 1].plot(N[mask], uppers[mask], label='Upper bound')
+    axes[1, 1].plot(N[mask], lowers[mask], label='Lower bound')
+    axes[1, 1].set_title(f'Number of samples vs Intervals for C = {c:.2}')
+    axes[1, 1].set_xlabel('Number of samples')
+    axes[1, 1].set_ylabel('Intervals')
+    axes[1, 1].legend(loc='upper right')
+    axes[1, 1].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig("LabG2/output.png", dpi=300, bbox_inches='tight')
     plt.show()
 
 
 n_sample = 100_000
-plot_graphs(simulate(n_sample))
+results_mat = simulate(n_sample)
+plot_graphs(results_mat, n=99_100, c=.99)
