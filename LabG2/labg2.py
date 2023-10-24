@@ -100,7 +100,7 @@ def plot_graphs(results_mat, n=None, c=None):
     axes[0, 1].set_xlabel('Confidence level')
     axes[0, 1].set_xticks(np.unique(C))
     axes[0, 1].set_ylabel('Intervals')
-    axes[0, 1].legend(loc='upper right')
+    axes[0, 1].legend()
     axes[0, 1].grid(True, linestyle='--')
     
     # Plot 3: Number of samples vs. Accuracy
