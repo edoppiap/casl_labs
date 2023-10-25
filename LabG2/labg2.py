@@ -47,8 +47,8 @@ def simulate(n_sample=100_000):
     
     i = 0
     for N in Ns:
+        X = np.random.uniform(0, 10, N)
         for C in Cs:
-            X = np.random.uniform(0, 10, N)
             interval, acc = calculate_confidence_interval(X, C=C)
             results_mat[i] = [N, C, acc, interval[0], interval[1]]
             i += 1
