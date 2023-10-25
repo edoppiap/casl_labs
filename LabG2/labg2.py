@@ -105,15 +105,15 @@ def plot_graphs(results_mat, n=None, c=None):
     
     # Plot 3: Number of samples vs. Accuracy
     mask = np.isclose(C,c)
-    axes[1, 0].plot(N[mask], accs[mask], linestyle='-')
+    axes[1, 0].plot(N[mask], accs[mask], linestyle='-', marker='o', markersize=2)
     axes[1, 0].set_title(f'(c) Number of samples vs. Accuracy for C = {c:.2}')
     axes[1, 0].set_xlabel('Number of samples')
     axes[1, 0].set_ylabel('Accuracy')
     axes[1, 0].grid(True, linestyle='--')
     
     # Plot 4: Number of samples vs. Interval for C = c
-    axes[1, 1].plot(N[mask], uppers[mask], label='Upper bound')
-    axes[1, 1].plot(N[mask], lowers[mask], label='Lower bound')
+    axes[1, 1].plot(N[mask], uppers[mask], label='Upper bound', marker='o', markersize=2)
+    axes[1, 1].plot(N[mask], lowers[mask], label='Lower bound', marker='o', markersize=2)
     axes[1, 1].set_title(f'(d) Number of samples vs Intervals for C = {c:.2}')
     axes[1, 1].set_xlabel('Number of samples')
     axes[1, 1].set_ylabel('Intervals')
