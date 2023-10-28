@@ -168,6 +168,9 @@ class Queue:
     def __init__(self):
         self.queue = []
         
+    def has_waiting_clients(self):
+        return len(self.queue) > 0
+        
     def enqueue(self,new_client: Client):
         """Add a Client to the queue implementing the the insertion sort algorithm based on their urgency.
         This means that the most urgent customer who has been waiting the longest would be the first in the queue
@@ -202,6 +205,9 @@ class ServersList:
         
     def __len__(self):
         return len(self.servers)
+    
+    def departure(self,client):
+        self.servers.remove(client)
     
     def is_server_available(self):
         return len(self) < self.capacity
@@ -264,6 +270,7 @@ class System:
             time (float): A float number representing the time
             FES (PriorityQueue): This is the space of events (the event that are ment to happen)
             queue (Queue): This is the class that store the clients that are waiting
+            paused (Queue): This is the class that store the clients that has been put on pause
         """
         
         # measuring the simulation
@@ -288,7 +295,6 @@ class System:
             # it means that there were a server available and the service has started
             # determine the service time Ts
             service_time = random.expovariate(self.serv_lambda)
-            self.servers -= 1 # this is for saying that the server is busy
             
             # schedule the end of service at time Tcurr + Ts
             FES.put(Event(time + service_time, 'departure', client=client)) # the departure event has to memorize the client in case we have to stop the service
@@ -296,14 +302,57 @@ class System:
             # it means that there were no server available to process this client
             queue.enqueue(client)
         elif isinstance(result, Client): # it means that the server started processing the new more urgent client and return a paused client
+            
+            # cancel the scheduled departure of the less urgent client
             departure_time = FES.stop_service(result)
             if departure_time is not None:
                 result.paused_time = time # we put the time in which the client has been put on old to maintain the list sorted
                 result.time_left = departure_time - time
                 paused.enqueue(result)
+            
+            # schedule the departure of the more urgent client
+            service_time = random.expovariate(self.serv_lambda)
+            
+            FES.put(Event(time + service_time, 'departure', client=client))
     
-    def departure(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue):
-        pass # TODO
+    def departure(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue, 
+                  client: Client):
+        """This method calculate what happens when a client leave the system.
+        The major things that should happen are:
+        - we can process a client that has been put on pause
+        - or we can process a client that has been waiting in the queue
+        - or we put the server back on idle
+
+        Args:
+            time (float): A float number representing the time
+            FES (PriorityQueue): This is the space of events (the event that are ment to happen)
+            queue (Queue): This is the class that store the clients that are waiting
+            paused (Queue): This is the class that store the clients that has been put on pause
+            client (Client): The client that has departured
+        """
+        self.num_departures += 1
+        self.average_utilization += self.users * (time - self.time_last_event)
+        self.time_last_event = time
+        
+        self.users -= 1
+        self.servers.departure(client) # we can free the server        
+        
+        client = None
+        if paused.has_waiting_clients(): # this means that exist paused clients
+            client = paused.get()
+        elif queue.has_waiting_clients(): # this means that exist waiting clients
+            client = queue.get()
+            
+        if client is not None:
+            if client.paused_time is None:
+                self.average_delay_time += (time - client.arrival_time)                
+                service_time = random.expovariate(self.serv_lambda)
+            else: # this means that the client has been put on pause, we can resume the processing
+                self.average_delay_time += (time - client.paused_time)
+                service_time = client.time_left
+            
+            self.servers.start_service_if_possible(client) # this should immediately start a service
+            FES.put(Event(time + service_time, 'departure', client = client))
     
 def simulate():
     
@@ -330,4 +379,4 @@ def simulate():
         if event.type_ == 'arrival':
             system.arrival(time,FES,queue,paused)
         elif event.type_ == 'departure':
-            system.departure(time,FES,queue,paused)
+            system.departure(time,FES,queue,paused,event.client)
