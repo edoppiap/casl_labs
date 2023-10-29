@@ -1,5 +1,5 @@
 import random
-from enum import Enum 
+from enum import Enum
 
 N_DOCTOR = 5
 ARRIVAL_LAMBDA = 5
@@ -161,7 +161,7 @@ class PriorityQueue:
             _type_: _description_
         """
         for event in self.events:
-            if event.client == client:
+            if event.client == client and event.is_active():
                 event.deactivate()
                 return event.time # it returns the time when the events would take place
     
@@ -215,6 +215,17 @@ class ServersList:
     def is_server_available(self):
         return len(self) < self.capacity
     
+    def put(self,new_client):
+        index = None
+        for i,client in enumerate(self.servers):
+                if new_client.is_less_urgent_than(client):
+                    index = i
+                    break
+        if index is None:
+            self.servers.append(new_client)
+        else:
+            self.servers.insert(index,new_client)
+    
     def start_service_if_possible(self, new_client: Client):
         """Method that add a client to the service if there is a server available 
         or there is at least one doctor that is serving a less urgent client
@@ -227,14 +238,14 @@ class ServersList:
             None if we can't start a service, and a Client if we found one less urgent
         """
         if len(self) < self.capacity: # this means that there is at least one doctor available
-            self.servers.append(new_client)
+            self.put(new_client)
             return True
         else: # we need to check if there is at least one doctor that serve a client less urgent than this one
             paused_client = None
             for i,client in enumerate(self.servers):
-                if client.is_less_urgent_than(new_client): 
-                    paused_client = client
-                    self.servers[i] = new_client
+                if client.is_less_urgent_than(new_client):
+                    paused_client = self.servers.pop(i)
+                    self.put(new_client)
                     break # we can exit the loop, we found a less urgent client
             return paused_client # it is None if we do not find any less urgent client
     
@@ -322,27 +333,24 @@ class System:
             service_time = random.expovariate(self.serv_lambda)
             
             # schedule the end of service at time Tcurr + Ts
-            event = Event(time + service_time, 'departure', client=client)
-            FES.put(event) # the departure event has to memorize the client in case we have to stop the service
+            FES.put(Event(time + service_time, 'departure', client=client)) # the departure event has to memorize the client in case we have to stop the service
         elif result == None:
             # it means that there were no server available to process this client
             queue.enqueue(client)
         elif isinstance(result, Client): # it means that the server started processing the new more urgent client and return a paused client
-            
-            self.num_paused += 1
+            self.num_paused += 1 # store the number of clients that has been put on pause
             
             # cancel the scheduled departure of the less urgent client
             departure_time = FES.stop_service(result)
             if departure_time is not None:
-                result.paused_time = time # we put the time in which the client has been put on old to maintain the list sorted
-                result.time_left = time - departure_time 
-                paused.enqueue(result)
+                result.paused_time = time # we put the time in which the client has been put on old to maintain the list sorted based on that
+                result.time_left = departure_time - time # this is the remaining time for the processing
+                paused.enqueue(result) # we put the client in the queue for the paused clients 
             
             # schedule the departure of the more urgent client
             service_time = random.expovariate(self.serv_lambda)
             
-            event = Event(time + service_time, 'departure', client=client)
-            FES.put(event)
+            FES.put(Event(time + service_time, 'departure', client=client))
     
     def departure(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue, 
                   client: Client):
@@ -370,20 +378,15 @@ class System:
         client = self.most_urgent_waiting(queue,paused)        
         
         if client is not None: # we start a processing only if there is a client waiting
-            if client.paused_time is None:
-                self.average_delay_time += (time - client.arrival_time)                
+            self.average_delay_time += (time - client.arrival_time)    
+            if client.paused_time is None:            
                 service_time = random.expovariate(self.serv_lambda)
             else: # this means that the client has been put on pause, we can resume the processing
-                self.average_delay_time += (time - client.paused_time)
                 service_time = client.time_left
             
-            result = self.servers.start_service_if_possible(client) # this should immediately start a service
-            if result:
-                pass
-            if not result:
-                pass
-            event = Event(time + service_time, 'departure', client = client)
-            FES.put(event)
+            self.servers.start_service_if_possible(client) # this start immediately a service
+            
+            FES.put(Event(time + service_time, 'departure', client = client))
             
     def print_statistics(self,time):
         average_delay = self.average_delay_time/self.num_departures
