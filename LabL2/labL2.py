@@ -4,7 +4,7 @@ from enum import Enum
 N_DOCTOR = 5
 ARRIVAL_LAMBDA = 5
 SERVICE_LAMBDA = 1
-SIM_TIME = 500
+SIM_TIME = 15
 
 class Urgency(Enum):
     RED = 1
@@ -80,6 +80,9 @@ class Client:
     
     def is_less_urgent_than(self,other: 'Client'):
         return self.urgency.compare_to(other.urgency) > 0 # it means that other is more urgent
+    
+    def is_red(self):
+        return self.urgency == Urgency.RED
     
 class Event:
     def __init__(self, time:float, type_:str, client: Client = None):
@@ -173,6 +176,9 @@ class Queue:
         
     def has_waiting_clients(self):
         return len(self.queue) > 0
+    
+    def has_red_waiting(self):
+        return self.has_waiting_clients() and self.queue[0].urgency == Urgency.RED
         
     def enqueue(self,new_client: Client):
         """Add a Client to the queue implementing the the insertion sort algorithm based on their urgency.
@@ -216,6 +222,12 @@ class ServersList:
         return len(self) < self.capacity
     
     def put(self,new_client):
+        """This method ensure an order to this list in order to check the less urgent client first. 
+        In this way when a RED arrives a GREEN is paused and not a YELLOW
+
+        Args:
+            new_client (Client): A client that has started a service
+        """
         index = None
         for i,client in enumerate(self.servers):
                 if new_client.is_less_urgent_than(client):
@@ -243,7 +255,7 @@ class ServersList:
         else: # we need to check if there is at least one doctor that serve a client less urgent than this one
             paused_client = None
             for i,client in enumerate(self.servers):
-                if client.is_less_urgent_than(new_client):
+                if new_client.is_red() and not client.is_red():
                     paused_client = self.servers.pop(i)
                     self.put(new_client)
                     break # we can exit the loop, we found a less urgent client
@@ -275,24 +287,27 @@ class System:
         
     # Utils
     def most_urgent_waiting(self, queue: Queue, paused: Queue):
-        paused_client = None
-        waiting_client = None
-        if paused.has_waiting_clients(): # this means that exist paused clients
-            paused_client = paused.dequeue()
-        elif queue.has_waiting_clients(): # this means that exist waiting clients
-            waiting_client = queue.dequeue()
-            
-        if paused_client is not None and waiting_client is not None:
-            if paused_client.is_less_urgent_than(waiting_client):
-                return paused_client
-            else:
-                return waiting_client
-        elif paused_client is not None:
-            return paused_client
-        elif waiting_client is not None:
-            return waiting_client
-        else:
-            return None
+        """This method check if there is a red client waiting and in this case it returns it. 
+        Then check if there is a client paused and in this case returns it.
+        Then check if there is any other type of client waiting and returns it.
+        In case both queue and paused are empty it returns None.
+        In this way it prioritize the red client waiting and the green/yellow paused client remain in pause
+        but if there are no red clients waiting it prioritize the paused client
+
+        Args:
+            queue (Queue): This is the list of clients waiting
+            paused (Queue): This is the list of clients that has been put on pause
+
+        Returns:
+            Client: The most urgent client to serve
+        """
+        if queue.has_red_waiting():
+            return queue.dequeue()
+        elif paused.has_waiting_clients():
+            return paused.dequeue()
+        elif queue.has_waiting_clients():
+            return queue.dequeue()
+        return None
         
     def arrival(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue):
         """This method calculate what happen when a new client arrives in the system.
@@ -398,12 +413,12 @@ class System:
         print(f'Number of clients in the system at the end: {self.num_arrivals - self.num_departures}')
         
     
-def simulate():
+def simulate(arr_lambda:int = ARRIVAL_LAMBDA, 
+             serv_lambda: int = SERVICE_LAMBDA, 
+             n_server: int = N_DOCTOR):
     
     # Initialization
-    system = System(arr_lambda=ARRIVAL_LAMBDA, 
-                    serv_lambda=SERVICE_LAMBDA, 
-                    n_server=N_DOCTOR)
+    system = System(arr_lambda,serv_lambda,n_server)
     time = 0
     
     FES = PriorityQueue()
