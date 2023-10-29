@@ -2,9 +2,9 @@ import random
 from enum import Enum 
 
 N_DOCTOR = 5
-ARRIVAL_LAMBDA = 10
-SERVICE_LAMBDA = 10
-SIM_TIME = 2_000
+ARRIVAL_LAMBDA = 5
+SERVICE_LAMBDA = 1
+SIM_TIME = 500
 
 class Urgency(Enum):
     RED = 1
@@ -79,7 +79,7 @@ class Client:
         return compare
     
     def is_less_urgent_than(self,other: 'Client'):
-        return self.urgency.compareTo(other.urgency) > 0 # it means that other is more urgent
+        return self.urgency.compare_to(other.urgency) > 0 # it means that other is more urgent
     
 class Event:
     def __init__(self, time:float, type_:str, client: Client = None):
@@ -117,6 +117,9 @@ class PriorityQueue:
     """
     def __init__(self):
         self.events = [] # this is a list of events in the form: (time,type)
+        
+    def has_no_events(self):
+        return not self.events
     
     def put(self,new_event: Event):
         """
@@ -128,7 +131,7 @@ class PriorityQueue:
         """
         index = None
         for i,event in enumerate(self.events):
-            if event.is_early_than(new_event):
+            if new_event.is_early_than(event):
                 index = i
                 break
         if index is not None:
@@ -240,7 +243,7 @@ class System:
     and it is only an extention of the measurement parameters class
     """
     def __init__(self,arr_lambda: int, serv_lambda: int, n_server: int, 
-                 Narr=None,Ndep=None,NAverageUser=None,OldTimeEvent=None,AverageDelay=None):
+                 Narr=None,Ndep=None,NAverageUser=None,OldTimeEvent=None,AverageDelay=None, Npau=None):
         # input parameters
         self.arr_lambda = arr_lambda
         self.serv_lambda = serv_lambda
@@ -256,7 +259,29 @@ class System:
         self.average_utilization = 0 if NAverageUser is None else NAverageUser
         self.time_last_event = 0 if OldTimeEvent is None else OldTimeEvent
         self.average_delay_time = 0 if AverageDelay is None else AverageDelay
-        #self.num_dropped = 0 if Dropped is None else Dropped
+        self.num_paused = 0 if Npau is None else Npau
+        #self.num_dropped = 0 if Dropped is None else 
+        
+    # Utils
+    def most_urgent_waiting(self, queue: Queue, paused: Queue):
+        paused_client = None
+        waiting_client = None
+        if paused.has_waiting_clients(): # this means that exist paused clients
+            paused_client = paused.dequeue()
+        elif queue.has_waiting_clients(): # this means that exist waiting clients
+            waiting_client = queue.dequeue()
+            
+        if paused_client is not None and waiting_client is not None:
+            if paused_client.is_less_urgent_than(waiting_client):
+                return paused_client
+            else:
+                return waiting_client
+        elif paused_client is not None:
+            return paused_client
+        elif waiting_client is not None:
+            return waiting_client
+        else:
+            return None
         
     def arrival(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue):
         """This method calculate what happen when a new client arrives in the system.
@@ -275,7 +300,7 @@ class System:
         
         # measuring the simulation
         self.num_arrivals += 1
-        self.average_utilization += self.users * (time - self.time_last_event)
+        self.average_utilization += self.clients * (time - self.time_last_event)
         self.time_last_event = time
         
         # compute the inter-arrival time Tia for next client
@@ -297,31 +322,36 @@ class System:
             service_time = random.expovariate(self.serv_lambda)
             
             # schedule the end of service at time Tcurr + Ts
-            FES.put(Event(time + service_time, 'departure', client=client)) # the departure event has to memorize the client in case we have to stop the service
+            event = Event(time + service_time, 'departure', client=client)
+            FES.put(event) # the departure event has to memorize the client in case we have to stop the service
         elif result == None:
             # it means that there were no server available to process this client
             queue.enqueue(client)
         elif isinstance(result, Client): # it means that the server started processing the new more urgent client and return a paused client
             
+            self.num_paused += 1
+            
             # cancel the scheduled departure of the less urgent client
             departure_time = FES.stop_service(result)
             if departure_time is not None:
                 result.paused_time = time # we put the time in which the client has been put on old to maintain the list sorted
-                result.time_left = departure_time - time
+                result.time_left = time - departure_time 
                 paused.enqueue(result)
             
             # schedule the departure of the more urgent client
             service_time = random.expovariate(self.serv_lambda)
             
-            FES.put(Event(time + service_time, 'departure', client=client))
+            event = Event(time + service_time, 'departure', client=client)
+            FES.put(event)
     
     def departure(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue, 
                   client: Client):
         """This method calculate what happens when a client leave the system.
         The major things that should happen are:
-        - we can process a client that has been put on pause
-        - or we can process a client that has been waiting in the queue
-        - or we put the server back on idle
+        - it can be processed a client that has been put on pause
+        - or it can be processed a client that has been waiting in the queue
+        - it been decided based on the urgency of the two clients
+        - or the server can be put back on idle
 
         Args:
             time (float): A float number representing the time
@@ -331,19 +361,15 @@ class System:
             client (Client): The client that has departured
         """
         self.num_departures += 1
-        self.average_utilization += self.users * (time - self.time_last_event)
+        self.average_utilization += self.clients * (time - self.time_last_event)
         self.time_last_event = time
         
-        self.users -= 1
+        self.clients -= 1
         self.servers.departure(client) # we can free the server        
         
-        client = None
-        if paused.has_waiting_clients(): # this means that exist paused clients
-            client = paused.get()
-        elif queue.has_waiting_clients(): # this means that exist waiting clients
-            client = queue.get()
-            
-        if client is not None:
+        client = self.most_urgent_waiting(queue,paused)        
+        
+        if client is not None: # we start a processing only if there is a client waiting
             if client.paused_time is None:
                 self.average_delay_time += (time - client.arrival_time)                
                 service_time = random.expovariate(self.serv_lambda)
@@ -351,8 +377,23 @@ class System:
                 self.average_delay_time += (time - client.paused_time)
                 service_time = client.time_left
             
-            self.servers.start_service_if_possible(client) # this should immediately start a service
-            FES.put(Event(time + service_time, 'departure', client = client))
+            result = self.servers.start_service_if_possible(client) # this should immediately start a service
+            if result:
+                pass
+            if not result:
+                pass
+            event = Event(time + service_time, 'departure', client = client)
+            FES.put(event)
+            
+    def print_statistics(self,time):
+        average_delay = self.average_delay_time/self.num_departures
+        average_no_cust = self.average_utilization/time
+
+        print(f'Number of clients \ number of departures: {self.num_arrivals} \ {self.num_departures}')
+        print(f'Average time spent waiting: {average_delay:.4f}s\nAverage number of customers in the system: {average_no_cust:.2f}')
+        print(f'Number of clients been put on pause: {self.num_paused} ({self.num_paused / self.num_arrivals * 100:.2f}%)')
+        print(f'Number of clients in the system at the end: {self.num_arrivals - self.num_departures}')
+        
     
 def simulate():
     
@@ -370,7 +411,7 @@ def simulate():
     
     # Event loop
     while time < SIM_TIME:
-        if not FES.events:
+        if FES.has_no_events():
             break
         
         event = FES.get()
@@ -380,3 +421,9 @@ def simulate():
             system.arrival(time,FES,queue,paused)
         elif event.type_ == 'departure':
             system.departure(time,FES,queue,paused,event.client)
+            
+    # end of the simulation
+    system.print_statistics(time)
+    
+if __name__ == '__main__':
+    simulate()
