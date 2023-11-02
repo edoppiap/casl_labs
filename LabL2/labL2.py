@@ -13,11 +13,7 @@ from datetime import datetime
 #---------------------------------------------------------------------------------------------------------------------------------------------#
 
 """
-I know these are many lines of code, but I have tried to comment as much as possible, 
-to follow an object-oriented programming paradigm, and to write even unnecessary functions 
-to add readability to the code. This increased the lines but hopefully made them more readable.
-
-You can find 7 different classes for managing this queue system:
+There are 7 different classes for managing this queue system:
 1) The enum class for the Urgency. I choosed to use an Enum in order to have an object that could 
    be comparable
    
@@ -60,7 +56,7 @@ At the end there are two function, the simulate function is the method that cont
 all its input parameters are the input parameters for the simulation itself. The second function is the one
 that plot the graph but I think it's self explanatory. 
 
-At the very end I put the part of the code that start running when the file is called. Here you can find 
+At the very end I put the part of the code that start running when the file is called. Here it can be found 
 all the code for storing the result and for passing those to the method that plot all the results. 
 
 I hope this introduction can help understand better this code. 
@@ -81,7 +77,7 @@ class Urgency(Enum):
     YELLOW = 2
     GREEN = 3
     
-    def lambda_adjust(self):
+    def mu_adjust(self):
         """
         This method return a value that has to be added to the service lambda.
         The logic behind this is that green patients should take less time than yellow 
@@ -370,11 +366,11 @@ class System:
     """Class that store the system variables (so I can avoid using global variables) 
     and it is only an extention of the measurement parameters class
     """
-    def __init__(self,arr_lambda: int, serv_lambda: int, n_server: int, 
+    def __init__(self,arr_lambda: int, serv_mu: int, n_server: int, 
                  Narr=None,Ndep=None,Ndred=None,Ndyel=None,Ndgre=None,AverageQLen=None,NAverageUser=None,OldTimeEvent=None,AverageDelay=None, Npau=None):
         # input parameters
         self.arr_lambda = arr_lambda
-        self.serv_lambda = serv_lambda
+        self.serv_mu = serv_mu
         self.n_server = ServersList(n_server)
         
         # system variables (so I can avoid using global variables)
@@ -428,7 +424,7 @@ class System:
         Returns:
             float: The random time calculated for the service 
         """
-        return random.expovariate(self.serv_lambda + client.urgency.lambda_adjust())
+        return random.expovariate(self.serv_mu + client.urgency.mu_adjust())
         
     def arrival(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue):
         """This method calculate what happen when a new client arrives in the system.
@@ -555,13 +551,13 @@ class System:
 #
 #   Method that contains the Event Loop
 #
-def simulate(arr_lambda:int = 5, 
-             serv_lambda: int = 1, 
-             n_server: int = 5,
-             sim_time: int = 200):
+def simulate(arr_lambda:int = 5, # input parameter for the arrival_lambda variable
+             serv_mu: int = 1, # input parameter for the service_mu variable
+             n_server: int = 5, # input parameter for the number of server in the system
+             sim_time: int = 200): # input parameter for the simulation time
     
     # Initialization
-    system = System(arr_lambda,serv_lambda,n_server)
+    system = System(arr_lambda,serv_mu,n_server)
     time = 0
     
     FES = PriorityQueue()
@@ -571,7 +567,7 @@ def simulate(arr_lambda:int = 5,
     FES.put(Event(time,'arrival'))
     
     pbar = tqdm(total=sim_time,
-                desc=f'Simulating with n_server = {n_server}, arr_lambda = {arr_lambda}, serv_lambda = {serv_lambda} and sim_time = {sim_time}',
+                desc=f'Simulating with n_server = {n_server}, arr_lambda = {arr_lambda}, serv_mu = {serv_mu} and sim_time = {sim_time}',
                 bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}]')
     
     # Event loop
@@ -603,64 +599,6 @@ def simulate(arr_lambda:int = 5,
 #
 #   Method for the plot 1
 #
-def plot_graph_one_by_one(df,selected_arrival_lambda=12):
-    df_1 = df[df['ArrivalLambda'] == selected_arrival_lambda]
-    
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
-    folder_path = os.path.join(script_directory, 'output_images',current_time)
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
-    
-    
-    plt.plot(df_1['ServiceLambda'], df_1['RedDepartures'] / df_1['TotDepartures'], color='r', linestyle='-', marker='o', label='Red Client')
-    plt.plot(df_1['ServiceLambda'], df_1['YellowDepartures'] / df_1['TotDepartures'], color='y', linestyle='-', marker='o', label='Yellow Client')
-    plt.plot(df_1['ServiceLambda'], df_1['GreenDepartures'] / df_1['TotDepartures'], color='g', linestyle='-', marker='o', label='Green Client')
-    plt.title(f'Service Lambdas vs Percentages of processed client with Arrival Lambda = {selected_arrival_lambda}')
-    plt.xlabel('Lambdas')
-    plt.xticks(df_1['ServiceLambda'])
-    plt.ylabel('Percentages')
-    plt.grid(True)
-    plt.legend()
-    file_name = os.path.join(folder_path, 'output_1.png')
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.show()
-    
-    plt.plot(df_1['ServiceLambda'], df_1['TotDepartures'], color='black', linestyle='-', marker='o')
-    plt.title(f'Service Lambdas vs Total Number of processed clients with Arrival Lambda = {selected_arrival_lambda}')
-    plt.xlabel('Lambdas')
-    plt.xticks(df_1['ServiceLambda'])
-    plt.ylabel('Number of processed clients')
-    plt.grid(True)
-    file_name = os.path.join(folder_path, 'output_2.png')
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.show()
-    
-    plt.plot(df_1['ServiceLambda'], df_1['AverageQueueLenght'] / df_1['FinalTime'], color='purple', linestyle='-', marker='o')
-    plt.title(f'Service Lambdas vs Average Queue Lenght with Arrival Lambda = {selected_arrival_lambda}')
-    plt.xlabel('Lambdas')
-    plt.xticks(df_1['ServiceLambda'])
-    plt.ylabel('Average Queue Lenght')
-    plt.grid(True)
-    file_name = os.path.join(folder_path, 'output_3.png')
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.show()
-    
-    plt.plot(df_1['ServiceLambda'], df_1['TotPaused'], color='orange', linestyle='-', marker='o')
-    plt.title(f'Service Lambdas vs Total Number of paused Clients with Arrival Lambda = {selected_arrival_lambda}')
-    plt.xlabel('Lambdas')
-    plt.xticks(df_1['ServiceLambda'])
-    plt.ylabel('Total Paused Clients')
-    plt.grid(True)
-    file_name = os.path.join(folder_path, 'output_4.png')
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.show()
-
-#---------------------------------------------------------------------------------------------------------------------------------------------#
-
-#
-#   Method for the plot 2
-#
 def plot_graph(df,selected_arrival_lambda=12):
     """
     This method plots 4 different plots for analyze some results after the simulation
@@ -669,48 +607,8 @@ def plot_graph(df,selected_arrival_lambda=12):
         df (DataFrame): DataFrame that contains the measures after the simulations
         selected_arrival_lambda (int, optional): This is the selected arrival lambda fixed to show the results. Defaults to 12.
     """
-
+    
     df_1 = df[df['ArrivalLambda'] == selected_arrival_lambda]
-
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(15, 12))    
-    fig.suptitle(f'Arrival Lambdas = {selected_arrival_lambda} and Simulation Time = {df_1["FinalTime"].iloc[0]:.0f}')
-
-    # Plot 1 -> What kind of customers are those who have been processed? This graph shows the share of the total for each type of customer
-    axes[0, 0].plot(df_1['ServiceLambda'], df_1['RedDepartures'] / df_1['TotDepartures'], color='r', linestyle='-', marker='o', label='Red Client')
-    axes[0, 0].plot(df_1['ServiceLambda'], df_1['YellowDepartures'] / df_1['TotDepartures'], color='y', linestyle='-', marker='o', label='Yellow Client')
-    axes[0, 0].plot(df_1['ServiceLambda'], df_1['GreenDepartures'] / df_1['TotDepartures'], color='g', linestyle='-', marker='o', label='Green Client')
-    axes[0, 0].set_title(f'Service Lambdas vs Percentages of processed client')
-    axes[0, 0].set_xlabel('Service Lambdas')
-    axes[0, 0].set_xticks(df_1['ServiceLambda'])
-    axes[0, 0].set_ylabel('Percentages')
-    axes[0, 0].grid(True)
-    axes[0, 0].legend()
-
-    # Plot 2 -> This plot shows the total number of clients processed versus the service lambda for the Poisson distribution
-    axes[0, 1].plot(df_1['ServiceLambda'], df_1['TotDepartures'], color='black', linestyle='-', marker='o')
-    axes[0, 1].set_title(f'Service Lambdas vs Total Number of processed clients')
-    axes[0, 1].set_xlabel('Service Lambdas')
-    axes[0, 1].set_xticks(df_1['ServiceLambda'])
-    axes[0, 1].set_ylabel('Number of processed clients')
-    axes[0, 1].grid(True)
-
-    # Plot 3 -> This plot shows the average lenght of the queue versus the service lambda for the Poisson distribution
-    axes[1, 0].plot(df_1['ServiceLambda'], df_1['AverageQueueLenght'] / df_1['FinalTime'], color='purple', linestyle='-', marker='o')
-    axes[1, 0].set_title(f'Service Lambdas vs Average Queue Length')
-    axes[1, 0].set_xlabel('Service Lambdas')
-    axes[1, 0].set_xticks(df_1['ServiceLambda'])
-    axes[1, 0].set_ylabel('Average Queue Length')
-    axes[1, 0].grid(True)
-
-    # Plot 4 -> This plot shows the total number of paused clients versus the service lambda for the Poisson distribution
-    axes[1, 1].plot(df_1['ServiceLambda'], df_1['TotPaused'], color='orange', linestyle='-', marker='o')
-    axes[1, 1].set_title(f'Service Lambdas vs Total Number of paused Clients')
-    axes[1, 1].set_xlabel('Service Lambdas')
-    axes[1, 1].set_xticks(df_1['ServiceLambda'])
-    axes[1, 1].set_ylabel('Total Paused Clients')
-    axes[1, 1].grid(True)
-
-    plt.tight_layout()
     
     script_directory = os.path.dirname(os.path.abspath(__file__))
     current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
@@ -718,7 +616,50 @@ def plot_graph(df,selected_arrival_lambda=12):
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
     
-    file_name = os.path.join(folder_path, 'output_full.png')
+    # Plot 1 -> Service Mu vs Percentages of processed client with fixed arrival lambda, it plots how the system handle different rate 
+    plt.plot(df_1['ServiceMu'], df_1['RedDepartures'] / df_1['TotDepartures'], color='r', linestyle='-', marker='o', label='Red Client')
+    plt.plot(df_1['ServiceMu'], df_1['YellowDepartures'] / df_1['TotDepartures'], color='y', linestyle='-', marker='o', label='Yellow Client')
+    plt.plot(df_1['ServiceMu'], df_1['GreenDepartures'] / df_1['TotDepartures'], color='g', linestyle='-', marker='o', label='Green Client')
+    plt.title(f'Service μ vs Percentages of processed client with Arrival λ = {selected_arrival_lambda}')
+    plt.xlabel('μ')
+    plt.xticks(df_1['ServiceMu'])
+    plt.ylabel('Percentages')
+    plt.grid(True)
+    plt.legend()
+    file_name = os.path.join(folder_path, 'output_1.png')
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    # Plot 2 -> Service Mu vs Total Number of processed clients with fixed arrival lambda, it plots the increasing number of clients that the system can handle increasing mu
+    plt.plot(df_1['ServiceMu'], df_1['TotDepartures'], color='black', linestyle='-', marker='o')
+    plt.title(f'Service μ vs Total Number of processed clients with Arrival λ = {selected_arrival_lambda}')
+    plt.xlabel('μ')
+    plt.xticks(df_1['ServiceMu'])
+    plt.ylabel('Number of processed clients')
+    plt.grid(True)
+    file_name = os.path.join(folder_path, 'output_2.png')
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    # Plot 3 -> Service Mu vs Average Queue length with fixed arrival lambda, it plots the decreasing number of clients waiting on the queue as the mu increases
+    plt.plot(df_1['ServiceMu'], df_1['AverageQueueLenght'] / df_1['FinalTime'], color='purple', linestyle='-', marker='o')
+    plt.title(f'Service μ vs Average Queue Length with Arrival λ = {selected_arrival_lambda}')
+    plt.xlabel('μ')
+    plt.xticks(df_1['ServiceMu'])
+    plt.ylabel('Average Queue Length')
+    plt.grid(True)
+    file_name = os.path.join(folder_path, 'output_3.png')
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    # Plot 4 -> Service Mu vs Total number of paused clients with fixed arrival lambda, it plots how many service the system interrupt to process red client with different mu
+    plt.plot(df_1['ServiceMu'], df_1['TotPaused'], color='orange', linestyle='-', marker='o')
+    plt.title(f'Service μ vs Total Number of paused Clients with Arrival λ = {selected_arrival_lambda}')
+    plt.xlabel('μ')
+    plt.xticks(df_1['ServiceMu'])
+    plt.ylabel('Total Paused Clients')
+    plt.grid(True)
+    file_name = os.path.join(folder_path, 'output_4.png')
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.show()
     
@@ -730,20 +671,19 @@ def plot_graph(df,selected_arrival_lambda=12):
 if __name__ == '__main__':
     
     # DataFrame to store the measure for plotting
-    df = pd.DataFrame(columns=['ArrivalLambda','ServiceLambda','TotArrivals','TotDepartures','RedDepartures','YellowDepartures','GreenDepartures',\
+    df = pd.DataFrame(columns=['ArrivalLambda','ServiceMu','TotArrivals','TotDepartures','RedDepartures','YellowDepartures','GreenDepartures',\
         'AverageQueueLenght','AverageUtilization','TimeLastEvent','AverageDelayTime','TotPaused', 'FinalTime'])
  
-    # Combination of parameters to simulate the system with
+    # Combinations of parameters to simulate the system with
     param_dict = {
         'arrival_lambdas': [3,5,7,9,12,15],
-        'service_lambdas': [3,5,7,9,12,15]
+        'service_mus': [3,5,7,9,12,15]
     }
     
-    # Loop for trying the different combination
+    # Loop for trying the different combinations
     for arrival_lambda in param_dict['arrival_lambdas']:
-        for service_lambda in param_dict['service_lambdas']:
-            df.loc[len(df)] = [arrival_lambda, service_lambda] + simulate(arr_lambda=arrival_lambda,\
-                serv_lambda=service_lambda, n_server=1, sim_time=2_000)
+        for service_mu in param_dict['service_mus']:
+            df.loc[len(df)] = [arrival_lambda, service_mu] + simulate(arr_lambda=arrival_lambda,\
+                serv_mu=service_mu, n_server=1, sim_time=2_000)
         
     plot_graph(df)
-    plot_graph_one_by_one(df)
