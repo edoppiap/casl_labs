@@ -1,15 +1,28 @@
 import random
 from enum import Enum
-
-N_DOCTOR = 5
-ARRIVAL_LAMBDA = 5
-SERVICE_LAMBDA = 1
-SIM_TIME = 15
+from tqdm import tqdm
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+from datetime import datetime
 
 class Urgency(Enum):
     RED = 1
     YELLOW = 2
     GREEN = 3
+    
+    def lambda_adjust(self):
+        """
+        This method return a value that has to be added to the service lambda.
+        The logic behind this is that green patient should take less time than yellow 
+        and yellow less time than red patients. This method adjust the lambda following this
+        thought
+
+        Returns:
+            float: Value that has to be added to the service lambda to slightly adjust the distribution
+            based on the urgency of the client
+        """
+        return self.value - 3 * .5
     
     def compare_to(self,other: 'Urgency'):
         """
@@ -89,13 +102,6 @@ class Event:
         self.time = time
         self.type_ = type_
         self.client = client
-        self.active = True
-    
-    def deactivate(self):
-        self.active = False
-        
-    def is_active(self):
-        return self.active
     
     def compare_to(self,other: 'Event'):
         """
@@ -144,16 +150,14 @@ class PriorityQueue:
         
     def get(self):
         """
-        This method returns the active event that is the nearest in time
+        This method returns the event that is the nearest in time
 
         Returns:
             Event: An object representing an event 
         """
-        while True: # this will return only active events
+        while True: 
             if len(self.events) > 0:
-                event = self.events.pop(0)
-                if event.is_active():
-                    return event
+                return self.events.pop(0)
             else:
                 return None # it should neve occurs, but let's prevent some error
     
@@ -161,11 +165,11 @@ class PriorityQueue:
         """It finds the departure schedule for this client and cancel it
 
         Returns:
-            _type_: _description_
+            float: Is the time when the events would take place
         """
         for event in self.events:
-            if event.client == client and event.is_active():
-                event.deactivate()
+            if event.client == client:
+                self.events.remove(event)
                 return event.time # it returns the time when the events would take place
     
 class Queue:
@@ -266,7 +270,7 @@ class System:
     and it is only an extention of the measurement parameters class
     """
     def __init__(self,arr_lambda: int, serv_lambda: int, n_server: int, 
-                 Narr=None,Ndep=None,NAverageUser=None,OldTimeEvent=None,AverageDelay=None, Npau=None):
+                 Narr=None,Ndep=None,Ndred=None,Ndyel=None,Ndgre=None,AverageQLen=None,NAverageUser=None,OldTimeEvent=None,AverageDelay=None, Npau=None):
         # input parameters
         self.arr_lambda = arr_lambda
         self.serv_lambda = serv_lambda
@@ -279,6 +283,10 @@ class System:
         # Measurements paramenters
         self.num_arrivals = 0 if Narr is None else Narr
         self.num_departures = 0 if Ndep is None else Ndep
+        self.red_departures = 0 if Ndred is None else Ndred
+        self.yellow_departures = 0 if Ndyel is None else Ndyel
+        self.green_departures = 0 if Ndgre is None else Ndgre
+        self.average_queue_length = 0 if AverageQLen is None else AverageQLen
         self.average_utilization = 0 if NAverageUser is None else NAverageUser
         self.time_last_event = 0 if OldTimeEvent is None else OldTimeEvent
         self.average_delay_time = 0 if AverageDelay is None else AverageDelay
@@ -308,6 +316,9 @@ class System:
         elif queue.has_waiting_clients():
             return queue.dequeue()
         return None
+    
+    def calculate_service_time(self,client):
+        return random.expovariate(self.serv_lambda + client.urgency.lambda_adjust())
         
     def arrival(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue):
         """This method calculate what happen when a new client arrives in the system.
@@ -342,10 +353,9 @@ class System:
         
         result = self.servers.start_service_if_possible(client)
         
-        if result == True:
-            # it means that there were a server available and the service has started
+        if result == True: # it means that there were a server available and the service has started
             # determine the service time Ts
-            service_time = random.expovariate(self.serv_lambda)
+            service_time = self.calculate_service_time(client)
             
             # schedule the end of service at time Tcurr + Ts
             FES.put(Event(time + service_time, 'departure', client=client)) # the departure event has to memorize the client in case we have to stop the service
@@ -363,9 +373,11 @@ class System:
                 paused.enqueue(result) # we put the client in the queue for the paused clients 
             
             # schedule the departure of the more urgent client
-            service_time = random.expovariate(self.serv_lambda)
+            service_time = self.calculate_service_time(client)
             
             FES.put(Event(time + service_time, 'departure', client=client))
+        
+        self.average_queue_length += len(queue.queue)
     
     def departure(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue, 
                   client: Client):
@@ -386,16 +398,24 @@ class System:
         self.num_departures += 1
         self.average_utilization += self.clients * (time - self.time_last_event)
         self.time_last_event = time
+        if client.urgency == Urgency.GREEN:
+            self.green_departures += 1
+        elif client.urgency == Urgency.YELLOW:
+            self.yellow_departures += 1
+        else:
+            self.red_departures +=1
         
         self.clients -= 1
         self.servers.departure(client) # we can free the server        
         
-        client = self.most_urgent_waiting(queue,paused)        
+        client = self.most_urgent_waiting(queue,paused)
+        
+        self.average_queue_length += len(queue.queue)
         
         if client is not None: # we start a processing only if there is a client waiting
             self.average_delay_time += (time - client.arrival_time)    
             if client.paused_time is None:            
-                service_time = random.expovariate(self.serv_lambda)
+                service_time = self.calculate_service_time(client)
             else: # this means that the client has been put on pause, we can resume the processing
                 service_time = client.time_left
             
@@ -406,16 +426,23 @@ class System:
     def print_statistics(self,time):
         average_delay = self.average_delay_time/self.num_departures
         average_no_cust = self.average_utilization/time
+        average_queue_len = self.average_queue_length/time
 
         print(f'Number of clients \ number of departures: {self.num_arrivals} \ {self.num_departures}')
+        print(f'Number of green patients served: {self.green_departures} ({self.green_departures/self.num_departures * 100:.2f}%)')
+        print(f'Number of yellow patients served: {self.yellow_departures} ({self.yellow_departures/self.num_departures * 100:.2f}%)')
+        print(f'Number of red patients served: {self.red_departures} ({self.red_departures/self.num_departures * 100:.2f}%)')
         print(f'Average time spent waiting: {average_delay:.4f}s\nAverage number of customers in the system: {average_no_cust:.2f}')
+        print(f'Average queue lenght: {average_queue_len:.2f} patients')
         print(f'Number of clients been put on pause: {self.num_paused} ({self.num_paused / self.num_arrivals * 100:.2f}%)')
         print(f'Number of clients in the system at the end: {self.num_arrivals - self.num_departures}')
-        
+        print('\n ===================== \n')
     
-def simulate(arr_lambda:int = ARRIVAL_LAMBDA, 
-             serv_lambda: int = SERVICE_LAMBDA, 
-             n_server: int = N_DOCTOR):
+# those are the default values
+def simulate(arr_lambda:int = 5, 
+             serv_lambda: int = 1, 
+             n_server: int = 5,
+             sim_time: int = 200):
     
     # Initialization
     system = System(arr_lambda,serv_lambda,n_server)
@@ -427,21 +454,109 @@ def simulate(arr_lambda:int = ARRIVAL_LAMBDA,
     
     FES.put(Event(time,'arrival'))
     
+    pbar = tqdm(total=sim_time,
+                desc=f'Simulating with n_server = {n_server}, arr_lambda = {arr_lambda}, serv_lambda = {serv_lambda} and sim_time = {sim_time}',
+                bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}]')
+    
     # Event loop
-    while time < SIM_TIME:
+    while time < sim_time:
         if FES.has_no_events():
             break
         
         event = FES.get()
+        
+        if event.time < sim_time: # to prevent a warning to appear
+            pbar.update(event.time - time)
         time = event.time
         
         if event.type_ == 'arrival':
             system.arrival(time,FES,queue,paused)
         elif event.type_ == 'departure':
             system.departure(time,FES,queue,paused,event.client)
+    
+    pbar.close()
             
     # end of the simulation
     system.print_statistics(time)
     
+    return [system.num_arrivals, system.num_departures, system.red_departures, system.yellow_departures, system.green_departures, \
+        system.average_queue_length, system.average_utilization, system.time_last_event, system.average_delay_time, system.num_paused, time]
+    
+def plot_graph(df,selected_arrival_lambda=12):
+            
+    # plot 1 -> client_processed vs service_lambda (arr_lambda fixed)
+    # plot 2 -> average_queue_length vs service_lambda (arr_lambda fixed)
+    # plot 3 -> num_paused_client vs service_lambda (arr_lambda fixed)
+
+    df_1 = df[df['ArrivalLambda'] == selected_arrival_lambda]
+
+    # Create a 2x2 grid of plots
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(15, 12))
+    
+    fig.suptitle(f'Arrival Lambdas = {selected_arrival_lambda} and Simulation Time = {df_1["FinalTime"].iloc[0]:.0f}')
+
+    # Plot 1
+    axes[0, 0].plot(df_1['ServiceLambda'], df_1['RedDepartures'] / df_1['TotDepartures'], color='r', linestyle='-', marker='o', label='Red Client')
+    axes[0, 0].plot(df_1['ServiceLambda'], df_1['YellowDepartures'] / df_1['TotDepartures'], color='y', linestyle='-', marker='o', label='Yellow Client')
+    axes[0, 0].plot(df_1['ServiceLambda'], df_1['GreenDepartures'] / df_1['TotDepartures'], color='g', linestyle='-', marker='o', label='Green Client')
+    axes[0, 0].set_title(f'Service Lambdas vs Percentages of processed client')
+    axes[0, 0].set_xlabel('Service Lambdas')
+    axes[0, 0].set_xticks(df_1['ServiceLambda'])
+    axes[0, 0].set_ylabel('Percentages')
+    axes[0, 0].grid(True)
+    axes[0, 0].legend()
+
+    # Plot 2
+    axes[0, 1].plot(df_1['ServiceLambda'], df_1['TotDepartures'], color='black', linestyle='-', marker='o')
+    axes[0, 1].set_title(f'Service Lambdas vs Total Number of processed clients')
+    axes[0, 1].set_xlabel('Service Lambdas')
+    axes[0, 1].set_xticks(df_1['ServiceLambda'])
+    axes[0, 1].set_ylabel('Number of processed clients')
+    axes[0, 1].grid(True)
+
+    # Plot 3
+    axes[1, 0].plot(df_1['ServiceLambda'], df_1['AverageQueueLenght'] / df_1['FinalTime'], color='purple', linestyle='-', marker='o')
+    axes[1, 0].set_title(f'Service Lambdas vs Average Queue Length')
+    axes[1, 0].set_xlabel('Service Lambdas')
+    axes[1, 0].set_xticks(df_1['ServiceLambda'])
+    axes[1, 0].set_ylabel('Average Queue Length')
+    axes[1, 0].grid(True)
+
+    # Plot 4
+    axes[1, 1].plot(df_1['ServiceLambda'], df_1['TotPaused'], color='orange', linestyle='-', marker='o')
+    axes[1, 1].set_title(f'Service Lambdas vs Total Number of paused Clients')
+    axes[1, 1].set_xlabel('Service Lambdas')
+    axes[1, 1].set_xticks(df_1['ServiceLambda'])
+    axes[1, 1].set_ylabel('Total Paused Clients')
+    axes[1, 1].grid(True)
+
+    # Adjust layout
+    plt.tight_layout()
+    
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    folder_path = os.path.join(script_directory, 'output_images')
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    
+    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+    file_name = os.path.join(folder_path, 'output_'+current_time+'.png')
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    
 if __name__ == '__main__':
-    simulate()
+    
+    # DataFrame to store the measure for plotting
+    df = pd.DataFrame(columns=['ArrivalLambda','ServiceLambda','TotArrivals','TotDepartures','RedDepartures','YellowDepartures','GreenDepartures',\
+        'AverageQueueLenght','AverageUtilization','TimeLastEvent','AverageDelayTime','TotPaused', 'FinalTime'])
+ 
+    param_dict = {
+        'arrival_lambdas': [3,5,7,9,12,15],
+        'service_lambdas': [3,5,7,9,12,15]
+    }
+    
+    for arrival_lambda in param_dict['arrival_lambdas']:
+        for service_lambda in param_dict['service_lambdas']:
+            df.loc[len(df)] = [arrival_lambda, service_lambda] + simulate(arr_lambda=arrival_lambda, serv_lambda=service_lambda, n_server=1, sim_time=2_000)
+            
+    plot_graph(df)
