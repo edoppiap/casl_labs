@@ -6,7 +6,66 @@ import matplotlib.pyplot as plt
 import os
 from datetime import datetime
 
+"""
+I know these are many lines of code, but I have tried to comment as much as possible, 
+to follow an object-oriented programming paradigm, and to write even unnecessary functions 
+to add readability to the code. This increased the lines but hopefully made them more readable.
+
+You can find 7 different classes for managing this queue system:
+1) The enum class for the Urgency. I choosed to use an Enum in order to have an object that could 
+   be comparable
+   
+3) The Client class that has all the functionality for managing the client. You can find the code
+   that randomly assign (following the professor's request) the Urgency as a method of this class. I
+   choosed to give all the clients the same arrival distribution and after the arrival assign each one
+   a random Urgency. At the end of the day, the probability for each urgency is the one requested. 
+   
+4) The Event class: this is usefull for adding some more information about an event. I choosed to link
+   a departure event with the client it should departure, this because the system has to know wich client
+   is supposed to departure if there is an interruption caused by an arrival of a red client. There was 
+   need to link also the arrival with the client so those events are not associated with any client. 
+   
+5) The PriorityQueue class: this is my personal implementation of the FES. Here we have a simple list
+   constantly sorted by the implementation of the insertion sort algorithm. When there is an addition
+   the element in inserted into the list at the position that maintains the desired order. The desired
+   order is the one that maintains the first element as the closest in time. In this class you can 
+   find the code that deals with searching for the scheduled departure for a client and deletes it.
+   
+6) The Queue class: this is my implementation of the queue. This class is used for the queue but also 
+   to store the paused clients. This class is also a simple list constantly sorted by the implementation
+   of the insertion sort algorithm. The desidered order is the one that maintains the most urgent clients
+   first and the same type of clients are ordere based on their arrival time. I add another order based
+   on the paused time because when it is used as paused list of clients they have to be ordered not by
+   their arrival time but by the time in which their service has been paused. There are also some simple
+   methods for adding some readability to the code. 
+   
+5) The ServersList class: this is a class of clients even if it's called ServersList, but it represent
+   the servers that are busy serving a client. It can reach only a certain capacity and it also mainain 
+   sorted but only by the clients urgency. This is done to prevent to put a YELLOW client in pause if there
+   is a GREEN client in another server (the green clients are the one first checked in this way). There 
+   are also some function to improve readability. 
+   
+6) The System class is maybe the more useless but it represent the system in general. This class contain
+   all the method for running the simulation and the existance of this class allowed me to not have any
+   global variables. All the variable that has to be collected are stored inside this class, and also the
+   foundamental method for a simulation. 
+   
+At the end there are two function, the simulate function is the method that contain all the Event Loop and
+all its input parameters are the input parameters for the simulation itself. The second function is the one
+that plot the graph but I think it's self explanatory. 
+
+At the very end I put the part of the code that start running when the file is called. Here you can find 
+all the code for storing the result and for passing those to the method that plot all the results. 
+
+I hope this introduction can help understand better this code. 
+"""
+
 class Urgency(Enum):
+    """
+    This class manage the Urgency color of the clients. It is an enumeration (or Enum).
+    The attributes Urgency.RED, Urgency.YELLOW, etc., are enumeration members and are 
+    functionally constants. 
+    """
     RED = 1
     YELLOW = 2
     GREEN = 3
@@ -150,7 +209,8 @@ class PriorityQueue:
         
     def get(self):
         """
-        This method returns the event that is the nearest in time
+        This method returns the closest event in time. As the list is kept in order, 
+        it can simply be the first element.
 
         Returns:
             Event: An object representing an event 
@@ -162,7 +222,7 @@ class PriorityQueue:
                 return None # it should neve occurs, but let's prevent some error
     
     def stop_service(self, client: Client):
-        """It finds the departure schedule for this client and cancel it
+        """It finds the departure schedule for this client and deletes it
 
         Returns:
             float: Is the time when the events would take place
@@ -318,6 +378,15 @@ class System:
         return None
     
     def calculate_service_time(self,client):
+        """This method calculate the service time. I add an adjustment parameter to give slightly 
+        different distribution based on the urgency of the customers.  
+
+        Args:
+            client (Client): The Client object for which the service time is to be calculated
+
+        Returns:
+            float: The random time calculated for the service 
+        """
         return random.expovariate(self.serv_lambda + client.urgency.lambda_adjust())
         
     def arrival(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue):
@@ -438,7 +507,11 @@ class System:
         print(f'Number of clients in the system at the end: {self.num_arrivals - self.num_departures}')
         print('\n ===================== \n')
     
-# those are the default values
+#################
+#
+# Event Loop
+#
+#################
 def simulate(arr_lambda:int = 5, 
              serv_lambda: int = 1, 
              n_server: int = 5,
@@ -483,19 +556,20 @@ def simulate(arr_lambda:int = 5,
         system.average_queue_length, system.average_utilization, system.time_last_event, system.average_delay_time, system.num_paused, time]
     
 def plot_graph(df,selected_arrival_lambda=12):
-            
-    # plot 1 -> client_processed vs service_lambda (arr_lambda fixed)
-    # plot 2 -> average_queue_length vs service_lambda (arr_lambda fixed)
-    # plot 3 -> num_paused_client vs service_lambda (arr_lambda fixed)
+    """
+    This method plots 4 different plots for analyze some results after the simulation
+
+    Args:
+        df (DataFrame): DataFrame that contains the measures after the simulations
+        selected_arrival_lambda (int, optional): This is the selected arrival lambda fixed to show the results. Defaults to 12.
+    """
 
     df_1 = df[df['ArrivalLambda'] == selected_arrival_lambda]
 
-    # Create a 2x2 grid of plots
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(15, 12))
-    
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(15, 12))    
     fig.suptitle(f'Arrival Lambdas = {selected_arrival_lambda} and Simulation Time = {df_1["FinalTime"].iloc[0]:.0f}')
 
-    # Plot 1
+    # Plot 1 -> What kind of customers are those who have been processed? This graph shows the share of the total for each type of customer
     axes[0, 0].plot(df_1['ServiceLambda'], df_1['RedDepartures'] / df_1['TotDepartures'], color='r', linestyle='-', marker='o', label='Red Client')
     axes[0, 0].plot(df_1['ServiceLambda'], df_1['YellowDepartures'] / df_1['TotDepartures'], color='y', linestyle='-', marker='o', label='Yellow Client')
     axes[0, 0].plot(df_1['ServiceLambda'], df_1['GreenDepartures'] / df_1['TotDepartures'], color='g', linestyle='-', marker='o', label='Green Client')
@@ -506,7 +580,7 @@ def plot_graph(df,selected_arrival_lambda=12):
     axes[0, 0].grid(True)
     axes[0, 0].legend()
 
-    # Plot 2
+    # Plot 2 -> This plot shows the total number of clients processed versus the service lambda for the Poisson distribution
     axes[0, 1].plot(df_1['ServiceLambda'], df_1['TotDepartures'], color='black', linestyle='-', marker='o')
     axes[0, 1].set_title(f'Service Lambdas vs Total Number of processed clients')
     axes[0, 1].set_xlabel('Service Lambdas')
@@ -514,7 +588,7 @@ def plot_graph(df,selected_arrival_lambda=12):
     axes[0, 1].set_ylabel('Number of processed clients')
     axes[0, 1].grid(True)
 
-    # Plot 3
+    # Plot 3 -> This plot shows the average lenght of the queue versus the service lambda for the Poisson distribution
     axes[1, 0].plot(df_1['ServiceLambda'], df_1['AverageQueueLenght'] / df_1['FinalTime'], color='purple', linestyle='-', marker='o')
     axes[1, 0].set_title(f'Service Lambdas vs Average Queue Length')
     axes[1, 0].set_xlabel('Service Lambdas')
@@ -522,7 +596,7 @@ def plot_graph(df,selected_arrival_lambda=12):
     axes[1, 0].set_ylabel('Average Queue Length')
     axes[1, 0].grid(True)
 
-    # Plot 4
+    # Plot 4 -> This plot shows the total number of paused clients versus the service lambda for the Poisson distribution
     axes[1, 1].plot(df_1['ServiceLambda'], df_1['TotPaused'], color='orange', linestyle='-', marker='o')
     axes[1, 1].set_title(f'Service Lambdas vs Total Number of paused Clients')
     axes[1, 1].set_xlabel('Service Lambdas')
@@ -530,7 +604,6 @@ def plot_graph(df,selected_arrival_lambda=12):
     axes[1, 1].set_ylabel('Total Paused Clients')
     axes[1, 1].grid(True)
 
-    # Adjust layout
     plt.tight_layout()
     
     script_directory = os.path.dirname(os.path.abspath(__file__))
@@ -544,17 +617,24 @@ def plot_graph(df,selected_arrival_lambda=12):
     plt.show()
     
     
+#################
+#
+# Main method
+#
+#################
 if __name__ == '__main__':
     
     # DataFrame to store the measure for plotting
     df = pd.DataFrame(columns=['ArrivalLambda','ServiceLambda','TotArrivals','TotDepartures','RedDepartures','YellowDepartures','GreenDepartures',\
         'AverageQueueLenght','AverageUtilization','TimeLastEvent','AverageDelayTime','TotPaused', 'FinalTime'])
  
+    # Combination of parameters to simulate the system with
     param_dict = {
         'arrival_lambdas': [3,5,7,9,12,15],
         'service_lambdas': [3,5,7,9,12,15]
     }
     
+    # Loop for trying the different combination
     for arrival_lambda in param_dict['arrival_lambdas']:
         for service_lambda in param_dict['service_lambdas']:
             df.loc[len(df)] = [arrival_lambda, service_lambda] + simulate(arr_lambda=arrival_lambda, serv_lambda=service_lambda, n_server=1, sim_time=2_000)
