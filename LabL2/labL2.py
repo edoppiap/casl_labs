@@ -1,3 +1,7 @@
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
+# IMPORTS
+
 import random
 from enum import Enum
 from tqdm import tqdm
@@ -5,6 +9,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
+
+#---------------------------------------------------------------------------------------------------------------------------------------------#
 
 """
 I know these are many lines of code, but I have tried to comment as much as possible, 
@@ -60,6 +66,11 @@ all the code for storing the result and for passing those to the method that plo
 I hope this introduction can help understand better this code. 
 """
 
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
+#
+#   Class That manage the Urgency of a client
+#
 class Urgency(Enum):
     """
     This class manage the Urgency color of the clients. It is an enumeration (or Enum).
@@ -73,8 +84,8 @@ class Urgency(Enum):
     def lambda_adjust(self):
         """
         This method return a value that has to be added to the service lambda.
-        The logic behind this is that green patient should take less time than yellow 
-        and yellow less time than red patients. This method adjust the lambda following this
+        The logic behind this is that green patients should take less time than yellow 
+        and yellow less time than red patients. This method adjust slightly the lambda following this
         thought
 
         Returns:
@@ -97,6 +108,11 @@ class Urgency(Enum):
         """
         return self.value - other.value
 
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
+#
+#   Class that represent a Client
+#
 class Client:
     def __init__(self, arrival_time, urgency: Urgency = None,
                  paused_time: float = None, # this will store the time in which the client has been put on pause
@@ -132,9 +148,9 @@ class Client:
         
     def compare_to(self,other: 'Client'):
         """
-        If returns something < 0 it means that the other is less urgent.
-        If returns something > 0 it means that the other is more urgent.
-        If returns something == 0 it means that the other has the same urgency.
+        - If returns something < 0 it means that the other is less urgent.
+        - If returns something > 0 it means that the other is more urgent.
+        - If returns something == 0 it means that the other has the same urgency.
 
         Args:
             other (Client): It's the client to compare this client with
@@ -144,9 +160,9 @@ class Client:
         """
         compare = self.urgency.compare_to(other.urgency) # this will be 0 only if they have the same urgency
         if compare == 0: # they have the same urgency
-            if self.paused_time is None: # we ordered based on their arrival_time
+            if self.paused_time is None: # the order is based on their arrival_time
                 compare = self.arrival_time - other.arrival_time
-            else: # we ordered based on their paused_time
+            else: # the order is based on their paused_time
                 compare = self.paused_time - other.paused_time
         return compare
     
@@ -155,7 +171,12 @@ class Client:
     
     def is_red(self):
         return self.urgency == Urgency.RED
-    
+
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
+#
+#   Class that represent an Event
+#
 class Event:
     def __init__(self, time:float, type_:str, client: Client = None):
         self.time = time
@@ -164,9 +185,9 @@ class Event:
     
     def compare_to(self,other: 'Event'):
         """
-        If returns something < 0 it means that the other is after.
-        If returns something > 0 it means that the other is before.
-        If returns something == 0 it means that they happen in the same exact time (very unlikely, I'm not handling this case).
+        - If returns something < 0 it means that the other is after.
+        - If returns something > 0 it means that the other is before.
+        - If returns something == 0 it means that they happen in the same exact time (very unlikely, I'm not handling this case).
 
         Args:
             other (Event): It's the other event to compare this event with
@@ -178,7 +199,12 @@ class Event:
     
     def is_early_than(self,other: 'Event'):
         return self.compare_to(other) < 0
-        
+
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
+#
+#   Personal implementation of the PriorityQueue (FES)
+#
 class PriorityQueue: 
     """
     Class where are stored the events that are ment to happen
@@ -231,7 +257,12 @@ class PriorityQueue:
             if event.client == client:
                 self.events.remove(event)
                 return event.time # it returns the time when the events would take place
-    
+
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
+#
+#   Class that represent a Queue (is it used for both queue and paused client)
+#
 class Queue:
     """Class where are stored the clients waiting
     """
@@ -271,6 +302,11 @@ class Queue:
         """
         return self.queue.pop(0)
 
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
+#
+#   Class that represent the clients that are in service
+#
 class ServersList:
     def __init__(self, n_servers):
         self.servers = [] # this is a list of clients
@@ -324,7 +360,12 @@ class ServersList:
                     self.put(new_client)
                     break # we can exit the loop, we found a less urgent client
             return paused_client # it is None if we do not find any less urgent client
-    
+
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
+#
+#   Class that old all system's measures and parameters
+#
 class System:
     """Class that store the system variables (so I can avoid using global variables) 
     and it is only an extention of the measurement parameters class
@@ -446,6 +487,7 @@ class System:
             
             FES.put(Event(time + service_time, 'departure', client=client))
         
+        # measure the average length queue
         self.average_queue_length += len(queue.queue)
     
     def departure(self, time: float, FES: PriorityQueue, queue: Queue, paused: Queue, 
@@ -479,6 +521,7 @@ class System:
         
         client = self.most_urgent_waiting(queue,paused)
         
+        # measure the average length queue
         self.average_queue_length += len(queue.queue)
         
         if client is not None: # we start a processing only if there is a client waiting
@@ -507,11 +550,11 @@ class System:
         print(f'Number of clients in the system at the end: {self.num_arrivals - self.num_departures}')
         print('\n ===================== \n')
     
-#################
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
 #
-# Event Loop
+#   Method that contains the Event Loop
 #
-#################
 def simulate(arr_lambda:int = 5, 
              serv_lambda: int = 1, 
              n_server: int = 5,
@@ -554,7 +597,70 @@ def simulate(arr_lambda:int = 5,
     
     return [system.num_arrivals, system.num_departures, system.red_departures, system.yellow_departures, system.green_departures, \
         system.average_queue_length, system.average_utilization, system.time_last_event, system.average_delay_time, system.num_paused, time]
+
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
+#
+#   Method for the plot 1
+#
+def plot_graph_one_by_one(df,selected_arrival_lambda=12):
+    df_1 = df[df['ArrivalLambda'] == selected_arrival_lambda]
     
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
+    folder_path = os.path.join(script_directory, 'output_images',current_time)
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    
+    
+    plt.plot(df_1['ServiceLambda'], df_1['RedDepartures'] / df_1['TotDepartures'], color='r', linestyle='-', marker='o', label='Red Client')
+    plt.plot(df_1['ServiceLambda'], df_1['YellowDepartures'] / df_1['TotDepartures'], color='y', linestyle='-', marker='o', label='Yellow Client')
+    plt.plot(df_1['ServiceLambda'], df_1['GreenDepartures'] / df_1['TotDepartures'], color='g', linestyle='-', marker='o', label='Green Client')
+    plt.title(f'Service Lambdas vs Percentages of processed client with Arrival Lambda = {selected_arrival_lambda}')
+    plt.xlabel('Lambdas')
+    plt.xticks(df_1['ServiceLambda'])
+    plt.ylabel('Percentages')
+    plt.grid(True)
+    plt.legend()
+    file_name = os.path.join(folder_path, 'output_1.png')
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    plt.plot(df_1['ServiceLambda'], df_1['TotDepartures'], color='black', linestyle='-', marker='o')
+    plt.title(f'Service Lambdas vs Total Number of processed clients with Arrival Lambda = {selected_arrival_lambda}')
+    plt.xlabel('Lambdas')
+    plt.xticks(df_1['ServiceLambda'])
+    plt.ylabel('Number of processed clients')
+    plt.grid(True)
+    file_name = os.path.join(folder_path, 'output_2.png')
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    plt.plot(df_1['ServiceLambda'], df_1['AverageQueueLenght'] / df_1['FinalTime'], color='purple', linestyle='-', marker='o')
+    plt.title(f'Service Lambdas vs Average Queue Lenght with Arrival Lambda = {selected_arrival_lambda}')
+    plt.xlabel('Lambdas')
+    plt.xticks(df_1['ServiceLambda'])
+    plt.ylabel('Average Queue Lenght')
+    plt.grid(True)
+    file_name = os.path.join(folder_path, 'output_3.png')
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    plt.plot(df_1['ServiceLambda'], df_1['TotPaused'], color='orange', linestyle='-', marker='o')
+    plt.title(f'Service Lambdas vs Total Number of paused Clients with Arrival Lambda = {selected_arrival_lambda}')
+    plt.xlabel('Lambdas')
+    plt.xticks(df_1['ServiceLambda'])
+    plt.ylabel('Total Paused Clients')
+    plt.grid(True)
+    file_name = os.path.join(folder_path, 'output_4.png')
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    plt.show()
+
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
+#
+#   Method for the plot 2
+#
 def plot_graph(df,selected_arrival_lambda=12):
     """
     This method plots 4 different plots for analyze some results after the simulation
@@ -607,21 +713,20 @@ def plot_graph(df,selected_arrival_lambda=12):
     plt.tight_layout()
     
     script_directory = os.path.dirname(os.path.abspath(__file__))
-    folder_path = os.path.join(script_directory, 'output_images')
+    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
+    folder_path = os.path.join(script_directory, 'output_images',current_time)
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
     
-    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
-    file_name = os.path.join(folder_path, 'output_'+current_time+'.png')
+    file_name = os.path.join(folder_path, 'output_full.png')
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.show()
     
-    
-#################
+#---------------------------------------------------------------------------------------------------------------------------------------------#
+
 #
-# Main method
+#   Main method
 #
-#################
 if __name__ == '__main__':
     
     # DataFrame to store the measure for plotting
@@ -637,6 +742,8 @@ if __name__ == '__main__':
     # Loop for trying the different combination
     for arrival_lambda in param_dict['arrival_lambdas']:
         for service_lambda in param_dict['service_lambdas']:
-            df.loc[len(df)] = [arrival_lambda, service_lambda] + simulate(arr_lambda=arrival_lambda, serv_lambda=service_lambda, n_server=1, sim_time=2_000)
-            
+            df.loc[len(df)] = [arrival_lambda, service_lambda] + simulate(arr_lambda=arrival_lambda,\
+                serv_lambda=service_lambda, n_server=1, sim_time=2_000)
+        
     plot_graph(df)
+    plot_graph_one_by_one(df)
