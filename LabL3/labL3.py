@@ -1,6 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.stats import ksone
+import scipy.stats as stats
+from scipy.special import erf
+import seaborn as sns
 
 """
 From the pdf (the probability density function) we can calculate the integral obtaining the cdf (cumulative
@@ -34,15 +38,14 @@ class Generator:
     #-----------------------------------------------------------------------------------------------------------------------#
     # GAMMA VARIATE RVs
     #
-    # This distribution has an important property that can be used to obtain gamma variate random variables 
-    # from a uniform distibution. The scaling property state that if we have a gamma variate random variable X
-    # then for every c > 0 also c * X is a gamma variate random variable.
-    # Knowing that the exponential distribution is a special case of the gamma distribution with k = 1 we can 
-    # generate exponential random variables (using the uniform) and then scale the obtained variables to obtain
-    # the gamma variate ones
+    # to generate a gamma variate random variable we use the property of this distribution that the sum of k exponential random
+    # variable with lambda = 1 / rate (the rate of the desired gamma variate distribution) is a gamma variate random variable
+    # we repeat this process size time to optain the desired number of gamma variate random variables
     def gamma_variate(self, shape, rate, size=1_000):
-        x = self.exponential(lam = rate, size = size)
-        return shape * x 
+        x = self.exponential(lam =  1/rate, size = size*shape) # array with shape(size*shape,)
+        # in this way if we reshape the array to have shape=(size,shape) we can sum the columns to obtain
+        # size gamma variate random variables
+        return x.reshape(size,shape).sum(axis=1)
 
     #-----------------------------------------------------------------------------------------------------------------------#
     # RAYLEIGH RVs
@@ -58,17 +61,29 @@ class Generator:
     # it can be calculated the inverse of the cdf only for ddof = [2]
     # for all the other I can simply generate k = ddof normal random variables (mu = 0, sigma_squared = 1)
     # and sum their squared values
-    # or using the gamma variate distribution and its relation with the chi_squared
     def chi_squared(self, ddof, size=1_000):
         if ddof < 1:
             raise KeyError("Degree of Freedom should be greather or equal than 1")        
         elif ddof == 1:
-            return self.normal(mu=0, sigma_squared=1, size=size) ** 2 
+            # this is actually useless as I already use this method in the ddof > 2 case
+            # but it is here to show that this method works 
+            return self.normal(mu=0, sigma=1, size=size) ** 2 
         elif ddof == 2:
             y = self.uniform(size)
-            return (-2 * np.log(y)) ** .5
+            return -2 * np.log(y)
         else:
-            y = self.gamma_variate(shape = (ddof / 2), rate = 2, size=size) # this is actually applicable to all the ddof
+            # this calculate the chi-squared variables as sum of n normal random variables, with n==ddof
+            # as I already have a method that returns me a number of normal random variables, I use it to
+            # obtain an array that can be reshaped to have size row of ddof random variables (so shape=(size,ddof))
+            # the sum of the columns of each row is equivalent to a single chi-squared random variable
+            # and all the columns at the end will be size chi-squared random variables
+            
+            
+            y = self.normal(mu=0, sigma=1, size=ddof*size) ** 2 # create the numpy.array with shape=(size*ddof,)
+            y = y.reshape(size, ddof) # reshaping the array to obtain shape=(size,ddof)
+            
+            # sum the columns and obtain an array with shape=(size,)
+            return np.sum(y, axis=1) # in this way I have size number of chi-squared random variables
         
     
     #-----------------------------------------------------------------------------------------------------------------------#
@@ -76,20 +91,20 @@ class Generator:
     #
     # we can generate normal random variables with the method explained in the slides: generating before 
     # normal random variables between [0,1) and then scaling to obtain the desider distribution
-    def normal(self, mu, sigma_squared, size=1_000):
+    def normal(self, mu, sigma, size=1_000):
         # calculating random values for the polar coordinates
-        B = self.chi_squared(ddof=2, size = int(size/2)) # the radius
+        B = (self.chi_squared(ddof=2, size = int(size/2))) ** .5 # the radius
         theta = 2 * np.pi * self.uniform(size = int(size / 2)) # the angle
         
         z = np.concatenate((B * np.cos(theta), B * np.sin(theta)), axis=0) # concatenating all the obtained variables
-        return mu + (sigma_squared ** .5) * z # scaling to obtain the desider distribution
+        return mu + sigma * z # scaling to obtain the desider distribution
 
     #-----------------------------------------------------------------------------------------------------------------------#
     # LOGNORMAL RVs
     #
     # for generating the lognormal random variables we can generate normal random variables and exponentiate them
-    def log_normal(self, mu, sigma_squared, size=1_000):
-        return np.exp(self.normal(mu, sigma_squared, size))
+    def log_normal(self, mu, sigma, size=1_000):
+        return np.exp(self.normal(mu, sigma, size))
     
     #-----------------------------------------------------------------------------------------------------------------------#
     # BETA RVs
@@ -111,63 +126,197 @@ class Generator:
     #-----------------------------------------------------------------------------------------------------------------------#
     # RICE RVs
     #
-    # For generating rice random variables we can use two independent normal random variables and a costant 
-    # value that can have any value(and represent an angle) thanks to the relation that the rice 
-    # distribution has with the normal
-    def rice(self, nu, sigma, theta=None, size = 1_000):
-        if theta is None:
-            theta = 360 * self.uniform(size=1) # it can be a fixed value, I generate a single value between [0°,360°)
+    # For generating rice random variables we can use two independent normal random variables 
+    def rice(self, nu, sigma, size = 1_000):
         if nu < 0 or sigma < 0:
             raise ValueError('Parameters nu and sigma should be greater or equal than 0')
             
-        x = self.normal(mu=nu*np.cos(theta), sigma_squared=sigma**2, size=size)
-        y = self.normal(mu=nu*np.sin(theta), sigma_squared=sigma**2, size=size)
+        x = self.normal(mu=0, sigma=1, size=size)
+        y = self.normal(mu=0, sigma=1, size=size)
         
-        return (x**2 + y**2) ** .5
+        r = (x**2 + y**2) ** .5
+        return sigma * r + nu
     
 class FitAssessment:
-    def ks_test(self, data, distr_name=None, *params):
+    def __init__(self, sign_level=.05):
+        self.sign_level = sign_level # is the confidence level in which it can be accept the data as following a given distribution
+
+    def external_ks_test(self, data, distr_name, *params):
+        data_sorted = np.sort(data)
+        
+        if distr_name == 'Rayleigh':
+            (sigma,) = params
+            ks_statistic, p_value = stats.kstest(data, 'rayleigh', args=(0, sigma))  # Use 'rayleigh' distribution here
+        elif distr_name == 'Chi-Squared':
+            (k,) = params
+            ks_statistic, p_value = stats.kstest(data, 'chi2', args=(k,))  # Use 'chi2' distribution here
+        elif distr_name == 'LogNormal':
+            mu, sigma = params
+            ks_statistic, p_value = stats.kstest(data, 'lognorm', args=(sigma, 0, np.exp(mu)))  # Use 'lognorm' distribution here
+        elif distr_name == 'Beta':
+            alpha, beta = params
+            ks_statistic, p_value = stats.kstest(data, 'beta', args=(alpha, beta))  # Use 'beta' distribution here
+        elif distr_name == 'Rice':
+            nu, sigma = params
+            ks_statistic, p_value = stats.kstest(data, 'rice', args=(nu, sigma))
+        elif distr_name == 'GammaVariate':
+            shape, rate = params  # Shape and rate parameters for gamma variate
+            ks_statistic, p_value = stats.kstest(data, 'gamma', args=(shape, 0, 1 / rate))  # Use 'gamma' distribution here
+        elif distr_name == 'Exponential':
+            lam, = params  # Rate parameter for exponential
+            ks_statistic, p_value = stats.kstest(data, 'expon', args=(0, 1 / lam))  # Use 'expon' distribution here
+
+        # Set your desired significance level (alpha)
+        alpha = 0.05
+
+        # Check the p-value against alpha to determine whether to reject the null hypothesis
+        if p_value < alpha:
+            print(f"Reject the null hypothesis: Data does not follow the {distr_name} distribution.")
+        else:
+            print(f"Fail to reject the null hypothesis: Data follows the {distr_name} distribution.")
+    
+    
+    def ks_test(self, 
+                data, # is the data that should be evaluate
+                distr_name, # is the name of the distribution
+                *params # here there are the parameters that should describe the distribution of the data
+                ):
         data_sorted = np.sort(data)
         
         # ECDF function for the K-S test
         n = len(data_sorted)
-        ecdf_values = np.zeros(n)
-        
-        for i in range(n):
-            ecdf_values[i] = np.sum(data_sorted <= data_sorted[i]) / n
+        ecdf_values = np.arange(1, n + 1) / n
             
         # CDF values based on the dsitribution we are interested in
-        cdf_values = np.zeros(n)
+        cdf_values = None
         
-        if distr_name == 'rayleigh':            
-            for i in range (n):
-                cdf_values[i] = 1 - np.exp((-data_sorted[i]**2) / (2*params[0]) ) # this is the cdf of the rayleigh
+        if distr_name == 'Rayleigh':
+            (sigma,) = params
+            cdf_values = 1 - np.exp((-data_sorted**2) / (2*sigma**2))
+        elif distr_name == 'Chi-Squared':
+            (k,) = params
+            cdf_values = stats.chi2.cdf(data_sorted, k)
+        elif distr_name == 'LogNormal':
+            mu, sigma_squared = params
+            cdf_values = .5 * (1 + erf((np.log(data_sorted) - mu) / (np.sqrt(2) * sigma_squared)))
+        elif distr_name == 'Beta':
+            alpha, beta = params
+            cdf_values = stats.beta.cdf(data_sorted, alpha, beta)
+        elif distr_name == 'Rice':
+            nu, sigma = params
+            cdf_values = stats.rice.cdf(data_sorted, nu, sigma)
+            #cdf_values = 1 - np.exp(-((data_sorted - nu)**2) / (2 * sigma**2))
+        elif distr_name == 'GammaVariate':
+            shape, rate = params  # Shape and rate parameters for gamma variate
+            cdf_values = stats.gamma.cdf(data_sorted, shape, scale=1/rate)
+        elif distr_name == 'Exponential':
+            lam, = params  # Rate parameter for exponential
+            cdf_values = 1 - np.exp(-lam * data_sorted)
         
         # Max distance between the values and the expected values
         D = np.abs(ecdf_values - cdf_values)
         Dmax = D.max()
-        print(Dmax) # this is the max distance value, now i got to assest if this is inside the critical value
+        #print(Dmax) # this is the max distance value, now i got to assest if this is inside the critical value
         
         # Critical Value
-        # TODO
+        # Critical Value for the test
+        critical_value = ksone.ppf(1 - self.sign_level / 2, n)
+        
+        # Compare D with the critical value
+        if Dmax <= critical_value:
+            print(f"D ({Dmax:.4f}) <= Critical Value ({critical_value:.4f}): Fail to reject the null hypothesis -> data follow the {distr_name} distribution")
+        else:
+            print(f"D ({Dmax:.4f}) > Critical Value ({critical_value:.4f}): Reject the null hypothesis -> data do not follow the {distr_name} distribution")
+         
+        
+        # Plot the ECDF and CDF
+        plt.figure(figsize=(8, 6))
+        plt.step(data_sorted, ecdf_values, label='ECDF')
+        plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
+        plt.xlabel('Value')
+        plt.ylabel('Cumulative Probability')
+        plt.legend()
+        plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution')
+        plt.show()
         
         # p-value
         #TODO
     
 if __name__ == '__main__':
+    
     gen = Generator()
-
+    fit = FitAssessment(.01)
+    size = 1_000
+    """
     #-----------------------------------------------------------------------------------------------------------------------#
     # RAYLEIGH EVALUATION
     #
     sigma = 3
-    size = 1_000
-    data = gen.rayleigh(sigma,size)
-    mean_pred = data.mean()
-    mean_truth = sigma * ((np.pi / 2) ** .5)
-
-    print(f'Prediction mean: {mean_pred}\nAnalytical mean: {mean_truth}')
+    print(f'\n============================================================\n')
+    print(f'Evaluating the Rayleigh random variables:')
+    data = gen.rayleigh(sigma,size)    
+    fit.ks_test(data, 'Rayleigh', sigma)
+    fit.external_ks_test(data, 'Rayleigh', sigma)
+    print(f'\n============================================================\n')
     
-    fit = FitAssessment()
+    #-----------------------------------------------------------------------------------------------------------------------#
+    # CHI-SQUARED EVALUATION
+    #
+    k = 10
+    data = gen.chi_squared(ddof=k, size=size)
+    print(f'Evaluating the Chi-Squared random variables:')
+    fit.ks_test(data, 'Chi-Squared', k)
+    fit.external_ks_test(data, 'Chi-Squared', k)
+    print(f'\n============================================================\n')
     
-    fit.ks_test(data, 'rayleigh', sigma)
+    #-----------------------------------------------------------------------------------------------------------------------#
+    # LOGNORMAL EVALUATION
+    #
+    mu = 1
+    sigma = 3
+    data = gen.log_normal(mu, sigma, size)
+    print(f'Evaluating the LogNormal random variables:')
+    fit.ks_test(data, 'LogNormal', mu, sigma)
+    fit.external_ks_test(data, 'LogNormal', mu, sigma)
+    print(f'\n============================================================\n')
+    
+    #-----------------------------------------------------------------------------------------------------------------------#
+    # EXPONENTIAL EVALUATION
+    #
+    data = gen.exponential(lam=1,size=size)
+    print(f'Evaluating the Exponential random variables:')
+    fit.ks_test(data, 'Exponential', 1)
+    fit.external_ks_test(data, 'Exponential', 1)
+    print(f'\n============================================================\n')
+    
+    #-----------------------------------------------------------------------------------------------------------------------#
+    # GAMMA VARIATE EVALUATION
+    #
+    data = gen.gamma_variate(shape = 5, rate = 1, size=size)
+    print(f'Evaluating the Gamma Variate random variables:')
+    fit.ks_test(data, 'GammaVariate', 5, 1)
+    fit.external_ks_test(data, 'GammaVariate', 5, 1)
+    print(f'\n============================================================\n')
+    
+    
+    #-----------------------------------------------------------------------------------------------------------------------#
+    # BETA EVALUATION
+    #
+    alpha = 5
+    beta = 10
+    data = gen.beta(alpha,beta,size)
+    print(f'Evaluating the Beta random variables:')
+    fit.ks_test(data, 'Beta', alpha, beta)
+    fit.external_ks_test(data, 'Beta', alpha, beta)
+    print(f'\n============================================================\n')
+    """
+    
+    #-----------------------------------------------------------------------------------------------------------------------#
+    # RICE EVALUATION
+    #
+    nu = 2
+    sigma = 2
+    data = gen.rice(nu,sigma,size=size)
+    print(f'Evaluating the Rice random variables:')
+    fit.ks_test(data, 'Rice', nu, sigma)
+    fit.external_ks_test(data, 'Rice', nu, sigma)
