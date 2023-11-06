@@ -129,20 +129,24 @@ class Generator:
     # For generating rice random variables we can use two independent normal random variables 
     def rice(self, nu, sigma, size = 1_000):
         if nu < 0 or sigma < 0:
-            raise ValueError('Parameters nu and sigma should be greater or equal than 0')
-            
-        x = self.normal(mu=0, sigma=1, size=size)
-        y = self.normal(mu=0, sigma=1, size=size)
+            raise ValueError('Parameters nu and sigma should be greater or equal than 0')        
         
-        r = (x**2 + y**2) ** .5
-        return sigma * r + nu
+        #x = self.normal(mu=nu, sigma=sigma, size=size)
+        #y = self.normal(mu=0, sigma=sigma, size=size)
+        x = np.random.normal(nu,sigma,size)
+        y = np.random.normal(0,sigma,size)
+        
+        return np.sqrt(x**2 + y**2)
+        #r = (x**2 + y**2) ** .5
+        #return sigma * r + nu
+        #return stats.rice.rvs(nu/sigma, loc=0, scale=sigma,size=size)
     
 class FitAssessment:
     def __init__(self, sign_level=.05):
         self.sign_level = sign_level # is the confidence level in which it can be accept the data as following a given distribution
 
     def external_ks_test(self, data, distr_name, *params):
-        data_sorted = np.sort(data)
+        p_value = 0
         
         if distr_name == 'Rayleigh':
             (sigma,) = params
@@ -158,7 +162,7 @@ class FitAssessment:
             ks_statistic, p_value = stats.kstest(data, 'beta', args=(alpha, beta))  # Use 'beta' distribution here
         elif distr_name == 'Rice':
             nu, sigma = params
-            ks_statistic, p_value = stats.kstest(data, 'rice', args=(nu, sigma))
+            ks_statistic, p_value = stats.kstest(data, 'rice', args=(nu/sigma, 0, sigma))
         elif distr_name == 'GammaVariate':
             shape, rate = params  # Shape and rate parameters for gamma variate
             ks_statistic, p_value = stats.kstest(data, 'gamma', args=(shape, 0, 1 / rate))  # Use 'gamma' distribution here
@@ -166,14 +170,11 @@ class FitAssessment:
             lam, = params  # Rate parameter for exponential
             ks_statistic, p_value = stats.kstest(data, 'expon', args=(0, 1 / lam))  # Use 'expon' distribution here
 
-        # Set your desired significance level (alpha)
-        alpha = 0.05
-
         # Check the p-value against alpha to determine whether to reject the null hypothesis
-        if p_value < alpha:
-            print(f"Reject the null hypothesis: Data does not follow the {distr_name} distribution.")
+        if p_value < self.sign_level:
+            print(f"{p_value:.4f} < {self.sign_level:.4f} Reject the null hypothesis: Data does not follow the {distr_name} distribution.")
         else:
-            print(f"Fail to reject the null hypothesis: Data follows the {distr_name} distribution.")
+            print(f"{p_value:.4f} > {self.sign_level:.4f} Fail to reject the null hypothesis: Data follows the {distr_name} distribution.")
     
     
     def ks_test(self, 
@@ -189,29 +190,45 @@ class FitAssessment:
             
         # CDF values based on the dsitribution we are interested in
         cdf_values = None
+        plt.figure(figsize=(8, 6))
+        plt.step(data_sorted, ecdf_values, label='ECDF')
         
         if distr_name == 'Rayleigh':
             (sigma,) = params
             cdf_values = 1 - np.exp((-data_sorted**2) / (2*sigma**2))
+            plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
+            plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution with σ = {sigma}')
         elif distr_name == 'Chi-Squared':
             (k,) = params
             cdf_values = stats.chi2.cdf(data_sorted, k)
+            plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
+            plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution with k = {k}')
         elif distr_name == 'LogNormal':
-            mu, sigma_squared = params
-            cdf_values = .5 * (1 + erf((np.log(data_sorted) - mu) / (np.sqrt(2) * sigma_squared)))
+            mu, sigma = params
+            cdf_values = .5 * (1 + erf((np.log(data_sorted) - mu) / (np.sqrt(2) * sigma)))
+            plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
+            plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution (v = {mu}, σ = {sigma})')
         elif distr_name == 'Beta':
             alpha, beta = params
             cdf_values = stats.beta.cdf(data_sorted, alpha, beta)
+            plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
+            plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution  (α = {alpha}, β = {beta})')
         elif distr_name == 'Rice':
             nu, sigma = params
-            cdf_values = stats.rice.cdf(data_sorted, nu, sigma)
+            cdf_values = stats.rice.cdf(data_sorted, (nu/sigma), 0, sigma)
+            plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
+            plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution (ν = {nu}, σ = {sigma})')
             #cdf_values = 1 - np.exp(-((data_sorted - nu)**2) / (2 * sigma**2))
         elif distr_name == 'GammaVariate':
             shape, rate = params  # Shape and rate parameters for gamma variate
             cdf_values = stats.gamma.cdf(data_sorted, shape, scale=1/rate)
+            plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
+            plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution with (shape = {shape}, rate = {rate})')
         elif distr_name == 'Exponential':
             lam, = params  # Rate parameter for exponential
             cdf_values = 1 - np.exp(-lam * data_sorted)
+            plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
+            plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution (λ = {lam})')
         
         # Max distance between the values and the expected values
         D = np.abs(ecdf_values - cdf_values)
@@ -224,19 +241,16 @@ class FitAssessment:
         
         # Compare D with the critical value
         if Dmax <= critical_value:
-            print(f"D ({Dmax:.4f}) <= Critical Value ({critical_value:.4f}): Fail to reject the null hypothesis -> data follow the {distr_name} distribution")
+            print(f"D ({Dmax:.4f}) <= Critical Value ({critical_value:.4f}): Fail to reject the null hypothesis -> data follows the {distr_name} distribution")
         else:
-            print(f"D ({Dmax:.4f}) > Critical Value ({critical_value:.4f}): Reject the null hypothesis -> data do not follow the {distr_name} distribution")
+            print(f"D ({Dmax:.4f}) > Critical Value ({critical_value:.4f}): Reject the null hypothesis -> data does not follow the {distr_name} distribution")
          
         
-        # Plot the ECDF and CDF
-        plt.figure(figsize=(8, 6))
-        plt.step(data_sorted, ecdf_values, label='ECDF')
-        plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
+        # Plot the ECDF and CDF        
         plt.xlabel('Value')
         plt.ylabel('Cumulative Probability')
         plt.legend()
-        plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution')
+        plt.grid(True)
         plt.show()
         
         # p-value
@@ -245,9 +259,9 @@ class FitAssessment:
 if __name__ == '__main__':
     
     gen = Generator()
-    fit = FitAssessment(.01)
+    fit = FitAssessment(.05)
     size = 1_000
-    """
+    
     #-----------------------------------------------------------------------------------------------------------------------#
     # RAYLEIGH EVALUATION
     #
@@ -309,14 +323,30 @@ if __name__ == '__main__':
     fit.ks_test(data, 'Beta', alpha, beta)
     fit.external_ks_test(data, 'Beta', alpha, beta)
     print(f'\n============================================================\n')
-    """
+    
     
     #-----------------------------------------------------------------------------------------------------------------------#
     # RICE EVALUATION
     #
-    nu = 2
-    sigma = 2
+    nu = 3
+    sigma = 5
     data = gen.rice(nu,sigma,size=size)
     print(f'Evaluating the Rice random variables:')
     fit.ks_test(data, 'Rice', nu, sigma)
-    fit.external_ks_test(data, 'Rice', nu, sigma)
+    #fit.external_ks_test(data, 'Rice', nu, sigma)
+    
+    x = np.linspace(0, data.max(), 1000)
+    pdf = stats.rice.pdf(x, b=nu/sigma, loc=0, scale=sigma)
+
+    # Plot the histogram of the generated data
+    plt.hist(data, bins=50, density=True, alpha=0.5, label='Data Histogram')
+
+    # Plot the analytical PDF
+    plt.plot(x, pdf, 'r', lw=2, label='Analytical PDF')
+
+    plt.xlabel('Value')
+    plt.ylabel('Probability Density')
+    plt.title(f'Rice Distribution (v={nu}, σ={sigma})')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
