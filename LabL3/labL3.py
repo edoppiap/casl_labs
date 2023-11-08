@@ -4,7 +4,8 @@ import numpy as np
 from scipy.stats import ksone
 import scipy.stats as stats
 from scipy.special import erf
-import seaborn as sns
+from datetime import datetime
+import os
 
 """
 From the pdf (the probability density function) we can calculate the integral obtaining the cdf (cumulative
@@ -38,12 +39,12 @@ class Generator:
     #-----------------------------------------------------------------------------------------------------------------------#
     # GAMMA VARIATE RVs
     #
-    # to generate a gamma variate random variable we use the property of this distribution that the sum of k exponential random
-    # variable with lambda = 1 / rate (the rate of the desired gamma variate distribution) is a gamma variate random variable
-    # we repeat this process size time to optain the desired number of gamma variate random variables
+    # to generate a gamma variate random variable we use the property of this distribution that the sum of k exponential 
+    # random variable with lambda = 1 / rate (the rate of the desired gamma variate distribution) is a gamma variate 
+    # random variable we repeat this process size time to optain the desired number of gamma variate random variables
     def gamma_variate(self, shape, rate, size=1_000):
         x = self.exponential(lam =  1/rate, size = size*shape) # array with shape(size*shape,)
-        # in this way if we reshape the array to have shape=(size,shape) we can sum the columns to obtain
+        # in this way if we reshape the array to have shape=(size,shape) we can sum the rows to obtain
         # size gamma variate random variables
         return x.reshape(size,shape).sum(axis=1)
 
@@ -76,13 +77,12 @@ class Generator:
             # as I already have a method that returns me a number of normal random variables, I use it to
             # obtain an array that can be reshaped to have size row of ddof random variables (so shape=(size,ddof))
             # the sum of the columns of each row is equivalent to a single chi-squared random variable
-            # and all the columns at the end will be size chi-squared random variables
-            
+            # and all the columns at the end will be size chi-squared random variables            
             
             y = self.normal(mu=0, sigma=1, size=ddof*size) ** 2 # create the numpy.array with shape=(size*ddof,)
             y = y.reshape(size, ddof) # reshaping the array to obtain shape=(size,ddof)
             
-            # sum the columns and obtain an array with shape=(size,)
+            # sum the rows and obtain an array with shape=(size,)
             return np.sum(y, axis=1) # in this way I have size number of chi-squared random variables
         
     
@@ -126,55 +126,56 @@ class Generator:
     #-----------------------------------------------------------------------------------------------------------------------#
     # RICE RVs
     #
-    # For generating rice random variables we can use two independent normal random variables 
+    # For generating rice random variables it can be used two independent normal random variables (x,y)
+    # following respectively x~N(nu * cos(theta),sigma) y~N(nu * sin(theta), sigma) for any theta 
+    # theta has been choosen to obtain cos(theta)==1 and sin(theta)==0
+    # the norm of (x,y) will follow the Rice distribution
     def rice(self, nu, sigma, size = 1_000):
         if nu < 0 or sigma < 0:
             raise ValueError('Parameters nu and sigma should be greater or equal than 0')        
         
-        #x = self.normal(mu=nu, sigma=sigma, size=size)
-        #y = self.normal(mu=0, sigma=sigma, size=size)
-        x = np.random.normal(nu,sigma,size)
-        y = np.random.normal(0,sigma,size)
+        x = self.normal(mu=nu, sigma=sigma, size=size)
+        y = self.normal(mu=0, sigma=sigma, size=size)
         
-        return np.sqrt(x**2 + y**2)
-        #r = (x**2 + y**2) ** .5
-        #return sigma * r + nu
-        #return stats.rice.rvs(nu/sigma, loc=0, scale=sigma,size=size)
+        return (x**2 + y**2) ** .5
     
 class FitAssessment:
     def __init__(self, sign_level=.05):
-        self.sign_level = sign_level # is the confidence level in which it can be accept the data as following a given distribution
+        # is the confidence level in which it can be accept the data as following a given distribution
+        self.sign_level = sign_level 
 
     def external_ks_test(self, data, distr_name, *params):
         p_value = 0
         
         if distr_name == 'Rayleigh':
             (sigma,) = params
-            ks_statistic, p_value = stats.kstest(data, 'rayleigh', args=(0, sigma))  # Use 'rayleigh' distribution here
+            ks_statistic, p_value = stats.kstest(data, 'rayleigh', args=(0, sigma)) 
         elif distr_name == 'Chi-Squared':
             (k,) = params
-            ks_statistic, p_value = stats.kstest(data, 'chi2', args=(k,))  # Use 'chi2' distribution here
+            ks_statistic, p_value = stats.kstest(data, 'chi2', args=(k,))  
         elif distr_name == 'LogNormal':
             mu, sigma = params
-            ks_statistic, p_value = stats.kstest(data, 'lognorm', args=(sigma, 0, np.exp(mu)))  # Use 'lognorm' distribution here
+            ks_statistic, p_value = stats.kstest(data, 'lognorm', args=(sigma, 0, np.exp(mu)))  
         elif distr_name == 'Beta':
             alpha, beta = params
-            ks_statistic, p_value = stats.kstest(data, 'beta', args=(alpha, beta))  # Use 'beta' distribution here
+            ks_statistic, p_value = stats.kstest(data, 'beta', args=(alpha, beta))
         elif distr_name == 'Rice':
             nu, sigma = params
             ks_statistic, p_value = stats.kstest(data, 'rice', args=(nu/sigma, 0, sigma))
         elif distr_name == 'GammaVariate':
             shape, rate = params  # Shape and rate parameters for gamma variate
-            ks_statistic, p_value = stats.kstest(data, 'gamma', args=(shape, 0, 1 / rate))  # Use 'gamma' distribution here
+            ks_statistic, p_value = stats.kstest(data, 'gamma', args=(shape, 0, 1 / rate))
         elif distr_name == 'Exponential':
             lam, = params  # Rate parameter for exponential
-            ks_statistic, p_value = stats.kstest(data, 'expon', args=(0, 1 / lam))  # Use 'expon' distribution here
+            ks_statistic, p_value = stats.kstest(data, 'expon', args=(0, 1 / lam))
 
         # Check the p-value against alpha to determine whether to reject the null hypothesis
         if p_value < self.sign_level:
-            print(f"{p_value:.4f} < {self.sign_level:.4f} Reject the null hypothesis: Data does not follow the {distr_name} distribution.")
+            print(f"{p_value:.4f} < {self.sign_level:.4f} Reject the null hypothesis: Data does\
+                not follow the {distr_name} distribution.")
         else:
-            print(f"{p_value:.4f} > {self.sign_level:.4f} Fail to reject the null hypothesis: Data follows the {distr_name} distribution.")
+            print(f"{p_value:.4f} > {self.sign_level:.4f} Fail to reject the null hypothesis: Data\
+                follows the {distr_name} distribution.")
     
     
     def ks_test(self, 
@@ -183,6 +184,12 @@ class FitAssessment:
                 *params # here there are the parameters that should describe the distribution of the data
                 ):
         data_sorted = np.sort(data)
+        
+        script_directory = os.path.dirname(os.path.abspath(__file__))
+        current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
+        folder_path = os.path.join(script_directory, 'output_images',current_time)
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
         
         # ECDF function for the K-S test
         n = len(data_sorted)
@@ -198,32 +205,38 @@ class FitAssessment:
             cdf_values = 1 - np.exp((-data_sorted**2) / (2*sigma**2))
             plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
             plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution with σ = {sigma}')
+            
         elif distr_name == 'Chi-Squared':
             (k,) = params
             cdf_values = stats.chi2.cdf(data_sorted, k)
             plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
             plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution with k = {k}')
+            
         elif distr_name == 'LogNormal':
             mu, sigma = params
             cdf_values = .5 * (1 + erf((np.log(data_sorted) - mu) / (np.sqrt(2) * sigma)))
             plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
             plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution (v = {mu}, σ = {sigma})')
+            
         elif distr_name == 'Beta':
             alpha, beta = params
             cdf_values = stats.beta.cdf(data_sorted, alpha, beta)
             plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
             plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution  (α = {alpha}, β = {beta})')
+            
         elif distr_name == 'Rice':
             nu, sigma = params
             cdf_values = stats.rice.cdf(data_sorted, (nu/sigma), 0, sigma)
             plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
             plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution (ν = {nu}, σ = {sigma})')
             #cdf_values = 1 - np.exp(-((data_sorted - nu)**2) / (2 * sigma**2))
+            
         elif distr_name == 'GammaVariate':
             shape, rate = params  # Shape and rate parameters for gamma variate
             cdf_values = stats.gamma.cdf(data_sorted, shape, scale=1/rate)
             plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
             plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution with (shape = {shape}, rate = {rate})')
+            
         elif distr_name == 'Exponential':
             lam, = params  # Rate parameter for exponential
             cdf_values = 1 - np.exp(-lam * data_sorted)
@@ -237,24 +250,29 @@ class FitAssessment:
         
         # Critical Value
         # Critical Value for the test
-        critical_value = ksone.ppf(1 - self.sign_level / 2, n)
+        critical_value = ksone.ppf(1 - self.sign_level / 2, n)        
+        
+        # p-value
+        p_value = 1 - ksone.sf(Dmax, n)
         
         # Compare D with the critical value
         if Dmax <= critical_value:
-            print(f"D ({Dmax:.4f}) <= Critical Value ({critical_value:.4f}): Fail to reject the null hypothesis -> data follows the {distr_name} distribution")
+            print(f"D ({Dmax:.4f}) <= Critical Value ({critical_value:.4f}): Fail to reject the null hypothesis -> "\
+                + f"data follows the {distr_name} distribution")
         else:
-            print(f"D ({Dmax:.4f}) > Critical Value ({critical_value:.4f}): Reject the null hypothesis -> data does not follow the {distr_name} distribution")
-         
+            print(f"D ({Dmax:.4f}) > Critical Value ({critical_value:.4f}): Reject the null hypothesis -> "\
+                + f"data does not follow the {distr_name} distribution")         
         
         # Plot the ECDF and CDF        
         plt.xlabel('Value')
         plt.ylabel('Cumulative Probability')
         plt.legend()
         plt.grid(True)
-        plt.show()
+        file_name = os.path.join(folder_path, 'ks_'+distr_name)
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        #plt.show()
+        plt.close()
         
-        # p-value
-        #TODO
     
 if __name__ == '__main__':
     
@@ -270,7 +288,7 @@ if __name__ == '__main__':
     print(f'Evaluating the Rayleigh random variables:')
     data = gen.rayleigh(sigma,size)    
     fit.ks_test(data, 'Rayleigh', sigma)
-    fit.external_ks_test(data, 'Rayleigh', sigma)
+    #fit.external_ks_test(data, 'Rayleigh', sigma)
     print(f'\n============================================================\n')
     
     #-----------------------------------------------------------------------------------------------------------------------#
@@ -280,38 +298,19 @@ if __name__ == '__main__':
     data = gen.chi_squared(ddof=k, size=size)
     print(f'Evaluating the Chi-Squared random variables:')
     fit.ks_test(data, 'Chi-Squared', k)
-    fit.external_ks_test(data, 'Chi-Squared', k)
+    #fit.external_ks_test(data, 'Chi-Squared', k)
     print(f'\n============================================================\n')
     
     #-----------------------------------------------------------------------------------------------------------------------#
     # LOGNORMAL EVALUATION
     #
     mu = 1
-    sigma = 3
+    sigma = 1
     data = gen.log_normal(mu, sigma, size)
     print(f'Evaluating the LogNormal random variables:')
     fit.ks_test(data, 'LogNormal', mu, sigma)
-    fit.external_ks_test(data, 'LogNormal', mu, sigma)
-    print(f'\n============================================================\n')
-    
-    #-----------------------------------------------------------------------------------------------------------------------#
-    # EXPONENTIAL EVALUATION
-    #
-    data = gen.exponential(lam=1,size=size)
-    print(f'Evaluating the Exponential random variables:')
-    fit.ks_test(data, 'Exponential', 1)
-    fit.external_ks_test(data, 'Exponential', 1)
-    print(f'\n============================================================\n')
-    
-    #-----------------------------------------------------------------------------------------------------------------------#
-    # GAMMA VARIATE EVALUATION
-    #
-    data = gen.gamma_variate(shape = 5, rate = 1, size=size)
-    print(f'Evaluating the Gamma Variate random variables:')
-    fit.ks_test(data, 'GammaVariate', 5, 1)
-    fit.external_ks_test(data, 'GammaVariate', 5, 1)
-    print(f'\n============================================================\n')
-    
+    #fit.external_ks_test(data, 'LogNormal', mu, sigma)
+    print(f'\n============================================================\n')    
     
     #-----------------------------------------------------------------------------------------------------------------------#
     # BETA EVALUATION
@@ -321,15 +320,15 @@ if __name__ == '__main__':
     data = gen.beta(alpha,beta,size)
     print(f'Evaluating the Beta random variables:')
     fit.ks_test(data, 'Beta', alpha, beta)
-    fit.external_ks_test(data, 'Beta', alpha, beta)
+    #fit.external_ks_test(data, 'Beta', alpha, beta)
     print(f'\n============================================================\n')
     
     
     #-----------------------------------------------------------------------------------------------------------------------#
     # RICE EVALUATION
     #
-    nu = 3
-    sigma = 5
+    nu = 0
+    sigma = 1
     data = gen.rice(nu,sigma,size=size)
     print(f'Evaluating the Rice random variables:')
     fit.ks_test(data, 'Rice', nu, sigma)
