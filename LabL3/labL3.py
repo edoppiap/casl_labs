@@ -171,12 +171,112 @@ class FitAssessment:
 
         # Check the p-value against alpha to determine whether to reject the null hypothesis
         if p_value < self.sign_level:
-            print(f"{p_value:.4f} < {self.sign_level:.4f} Reject the null hypothesis: Data does\
+            print(f"p value = {p_value:.4f} < significance level = {self.sign_level:.4f} Reject the null hypothesis: Data does\
                 not follow the {distr_name} distribution.")
         else:
             print(f"{p_value:.4f} > {self.sign_level:.4f} Fail to reject the null hypothesis: Data\
                 follows the {distr_name} distribution.")
-    
+            
+    def chi_squared_test(self, data, distr_name, *params):
+        
+        print(f'Chi-Squared test for {distr_name} distribution...')
+        
+        plt.figure(figsize=(8,6))
+        
+        if distr_name == 'Rayleigh':
+            sigma, = params
+            plt.title(f'Rayleigh Distribution (σ={sigma})')
+            
+            x = np.linspace(data.min(), data.max(), 50)
+            pdf_plot = (x / (sigma**2)) * np.exp((-x**2) / (2 * sigma ** 2))
+            plt.plot(x, pdf_plot, 'r', lw=2, label='Analytical PDF')
+            
+            hist,bins = np.histogram(data,bins=x, density=True)
+            bin_centers = (bins[:-1] + bins[1:]) / 2
+            pdf = (bin_centers / (sigma**2)) * np.exp((-bin_centers**2) / (2 * sigma ** 2))
+            chi2_stat = np.sum((hist - pdf)**2 / pdf)
+            df = len(hist) -2 -1
+            
+        elif distr_name == 'Chi-Squared':
+            (k,) = params
+            plt.title(f'{distr_name} Distribution (k = {k})')
+            
+            x = np.linspace(data.min(), data.max(), 50)
+            pdf_plot = stats.chi2.pdf(x, k)
+            plt.plot(x, pdf_plot, 'r', lw=2, label='Analytical PDF')
+            
+            hist,bins = np.histogram(data,bins=x, density=True)
+            bin_centers = (bins[:-1] + bins[1:]) / 2
+            pdf = stats.chi2.pdf(bin_centers, k)
+            chi2_stat = np.sum((hist - pdf)**2 / pdf)
+            df = len(hist) -2 -1
+            
+        elif distr_name == 'LogNormal':
+            mu, sigma = params
+            plt.title(f'{distr_name} Distribution (v = {mu}, σ = {sigma})')
+            
+            x = np.linspace(data.min(), data.max(), 50)
+            pdf_plot = (1 / (x * sigma * np.sqrt(2*np.pi))) * np.exp(-((np.log(x) - mu)**2) / 2 * sigma **2 )
+            #pdf_plot = stats.lognorm.pdf(x, scale=np.exp(mu), s=sigma)
+            plt.plot(x, pdf_plot, 'r', lw=2, label='Analytical PDF')
+            plt.yscale('log')
+            
+            hist,bins = np.histogram(data,bins=x, density=True)
+            bin_centers = (bins[:-1] + bins[1:]) / 2
+            pdf = (1 / (bin_centers * sigma * np.sqrt(2*np.pi))) * np.exp(-((np.log(bin_centers) - mu)**2) / 2 * sigma **2 )
+            #pdf = stats.lognorm.pdf(bin_centers, mu, sigma)
+            chi2_stat = np.sum((hist - pdf)**2 / pdf)
+            df = len(hist) -2 -1
+            
+        elif distr_name == 'Beta':
+            alpha, beta = params
+            plt.title(f'{distr_name} Distribution  (α = {alpha}, β = {beta})')
+            
+            x = np.linspace(data.min(), data.max(), 50)
+            pdf_plot = stats.beta.pdf(x, alpha, beta)
+            plt.plot(x, pdf_plot, 'r', lw=2, label='Analytical PDF')
+            
+            hist,bins = np.histogram(data,bins=x, density=True)
+            bin_centers = (bins[:-1] + bins[1:]) / 2
+            pdf = stats.beta.pdf(bin_centers, alpha, beta)
+            chi2_stat = np.sum((hist - pdf)**2 / pdf)
+            df = len(hist) -2 -1
+        
+        elif distr_name == 'Rice':
+        
+            nu,sigma = params
+            plt.title(f'Rice Distribution (v={nu}, σ={sigma})')
+                        
+            x = np.linspace(0, data.max(), 50)
+            pdf_plot = stats.rice.pdf(x, b=nu/sigma, loc=0, scale=sigma)
+            plt.plot(x, pdf_plot, 'r', lw=2, label='Analytical PDF')
+            
+            hist,bins = np.histogram(data,bins=x, density=True)        
+            bin_centers = (bins[:-1] + bins[1:]) / 2
+            pdf = stats.rice.pdf(bin_centers, nu/sigma, scale=sigma)
+            chi2_stat = np.sum((hist - pdf)**2 / pdf)
+            df = len(hist) -2 -1
+        
+        p_value = 1 - stats.chi2.pdf(chi2_stat, df)
+        
+        #print(f"Chi2 statistic: {chi2_stat}")
+        
+        if p_value < self.sign_level:
+            print(f'p value = {p_value:.4f} < significance level = {self.sign_level:.4f} -> Reject the '\
+                + f'null hypothesis: Data does not follow the {distr_name} distribution.')
+        else:
+            print(f"p value = {p_value:.4f} < significance level = {self.sign_level:.4f} -> Fail to "\
+                +f"reject the null hypothesis: Data follows the {distr_name} distribution.")
+        
+        plt.hist(data, bins=50, density=True, alpha=0.5, label='Data Histogram')
+        plt.xlabel('Value')
+        plt.ylabel('Probability Density')
+        plt.legend()
+        plt.grid(True)
+        file_name = os.path.join(folder_path, 'pdf_'+distr_name)
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        plt.close()
+        #plt.show()
     
     def ks_test(self, 
                 data, # is the data that should be evaluate
@@ -184,12 +284,7 @@ class FitAssessment:
                 *params # here there are the parameters that should describe the distribution of the data
                 ):
         data_sorted = np.sort(data)
-        
-        script_directory = os.path.dirname(os.path.abspath(__file__))
-        current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
-        folder_path = os.path.join(script_directory, 'output_images',current_time)
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
+        print(f'Kolmogorov-Smirnov Test for {distr_name} distribution')
         
         # ECDF function for the K-S test
         n = len(data_sorted)
@@ -276,6 +371,12 @@ class FitAssessment:
     
 if __name__ == '__main__':
     
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
+    folder_path = os.path.join(script_directory, 'output_images',current_time)
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    
     gen = Generator()
     fit = FitAssessment(.05)
     size = 1_000
@@ -285,8 +386,8 @@ if __name__ == '__main__':
     #
     sigma = 3
     print(f'\n============================================================\n')
-    print(f'Evaluating the Rayleigh random variables:')
-    data = gen.rayleigh(sigma,size)    
+    data = gen.rayleigh(sigma,size)
+    fit.chi_squared_test(data, 'Rayleigh', sigma)
     fit.ks_test(data, 'Rayleigh', sigma)
     #fit.external_ks_test(data, 'Rayleigh', sigma)
     print(f'\n============================================================\n')
@@ -296,7 +397,7 @@ if __name__ == '__main__':
     #
     k = 10
     data = gen.chi_squared(ddof=k, size=size)
-    print(f'Evaluating the Chi-Squared random variables:')
+    fit.chi_squared_test(data, 'Chi-Squared', k)
     fit.ks_test(data, 'Chi-Squared', k)
     #fit.external_ks_test(data, 'Chi-Squared', k)
     print(f'\n============================================================\n')
@@ -304,10 +405,10 @@ if __name__ == '__main__':
     #-----------------------------------------------------------------------------------------------------------------------#
     # LOGNORMAL EVALUATION
     #
-    mu = 1
+    mu = 15
     sigma = 1
     data = gen.log_normal(mu, sigma, size)
-    print(f'Evaluating the LogNormal random variables:')
+    fit.chi_squared_test(data, 'LogNormal', mu, sigma)
     fit.ks_test(data, 'LogNormal', mu, sigma)
     #fit.external_ks_test(data, 'LogNormal', mu, sigma)
     print(f'\n============================================================\n')    
@@ -318,7 +419,7 @@ if __name__ == '__main__':
     alpha = 5
     beta = 10
     data = gen.beta(alpha,beta,size)
-    print(f'Evaluating the Beta random variables:')
+    fit.chi_squared_test(data, 'Beta', alpha, beta)
     fit.ks_test(data, 'Beta', alpha, beta)
     #fit.external_ks_test(data, 'Beta', alpha, beta)
     print(f'\n============================================================\n')
@@ -330,22 +431,6 @@ if __name__ == '__main__':
     nu = 0
     sigma = 1
     data = gen.rice(nu,sigma,size=size)
-    print(f'Evaluating the Rice random variables:')
+    fit.chi_squared_test(data, 'Rice', nu, sigma)
     fit.ks_test(data, 'Rice', nu, sigma)
     #fit.external_ks_test(data, 'Rice', nu, sigma)
-    
-    x = np.linspace(0, data.max(), 1000)
-    pdf = stats.rice.pdf(x, b=nu/sigma, loc=0, scale=sigma)
-
-    # Plot the histogram of the generated data
-    plt.hist(data, bins=50, density=True, alpha=0.5, label='Data Histogram')
-
-    # Plot the analytical PDF
-    plt.plot(x, pdf, 'r', lw=2, label='Analytical PDF')
-
-    plt.xlabel('Value')
-    plt.ylabel('Probability Density')
-    plt.title(f'Rice Distribution (v={nu}, σ={sigma})')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
