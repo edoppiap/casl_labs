@@ -142,7 +142,36 @@ class Generator:
 class FitAssessment:
     def __init__(self, sign_level=.05):
         # is the confidence level in which it can be accept the data as following a given distribution
-        self.sign_level = sign_level 
+        self.sign_level = sign_level
+        
+    def first_two_moment(self, data, distr_name, *params):
+        if distr_name == 'Rayleigh':
+            sigma, = params
+            mean = sigma * np.sqrt(np.pi / 2)
+            variance = ((4 - np.pi) / 2 ) * sigma**2
+        
+        elif distr_name == 'Chi-Squared':
+            (k,) = params
+            mean = k
+            variance = 2*k
+            
+        elif distr_name == 'LogNormal':
+            mu, sigma = params
+            mean = np.exp(mu + (sigma**2 /2))
+            variance = (np.exp(sigma**2) -1) * np.exp(2*mu + (sigma**2))
+            
+        elif distr_name == 'Beta':
+            alpha, beta = params
+            mean = alpha / (alpha+beta)
+            variance = alpha*beta / ((alpha + beta)**2) * (alpha + beta + 1)
+            
+        elif distr_name == 'Rice':
+            nu, sigma = params
+            mean = stats.rice.mean(b=nu/sigma, scale=sigma)
+            variance = stats.rice.var(b=nu/sigma, scale=sigma)
+            
+        print(f'Analitical mean: {mean:.4f} Empirical mean: {data.mean():.4f}')
+        print(f'Analitical variance: {variance:.4f} Empirical variance: {data.var():.4f}')
 
     def external_ks_test(self, data, distr_name, *params):
         p_value = 0
@@ -387,6 +416,7 @@ if __name__ == '__main__':
     sigma = 3
     print(f'\n============================================================\n')
     data = gen.rayleigh(sigma,size)
+    fit.first_two_moment(data, 'Rayleigh', sigma)
     fit.chi_squared_test(data, 'Rayleigh', sigma)
     fit.ks_test(data, 'Rayleigh', sigma)
     #fit.external_ks_test(data, 'Rayleigh', sigma)
@@ -397,6 +427,7 @@ if __name__ == '__main__':
     #
     k = 10
     data = gen.chi_squared(ddof=k, size=size)
+    fit.first_two_moment(data, 'Chi-Squared', k)
     fit.chi_squared_test(data, 'Chi-Squared', k)
     fit.ks_test(data, 'Chi-Squared', k)
     #fit.external_ks_test(data, 'Chi-Squared', k)
@@ -408,6 +439,7 @@ if __name__ == '__main__':
     mu = 15
     sigma = 1
     data = gen.log_normal(mu, sigma, size)
+    fit.first_two_moment(data, 'LogNormal', mu, sigma)
     fit.chi_squared_test(data, 'LogNormal', mu, sigma)
     fit.ks_test(data, 'LogNormal', mu, sigma)
     #fit.external_ks_test(data, 'LogNormal', mu, sigma)
@@ -419,6 +451,7 @@ if __name__ == '__main__':
     alpha = 5
     beta = 10
     data = gen.beta(alpha,beta,size)
+    fit.first_two_moment(data, 'Beta', alpha, beta)
     fit.chi_squared_test(data, 'Beta', alpha, beta)
     fit.ks_test(data, 'Beta', alpha, beta)
     #fit.external_ks_test(data, 'Beta', alpha, beta)
@@ -431,6 +464,7 @@ if __name__ == '__main__':
     nu = 0
     sigma = 1
     data = gen.rice(nu,sigma,size=size)
+    fit.first_two_moment(data, 'Rice', nu, sigma)
     fit.chi_squared_test(data, 'Rice', nu, sigma)
     fit.ks_test(data, 'Rice', nu, sigma)
     #fit.external_ks_test(data, 'Rice', nu, sigma)
