@@ -1,0 +1,57 @@
+Consider the following systems to simulate:
+
+SOCIAL. Simulate how a social media post spreads through a network
+
+STOCK. Simulate stock market prices
+
+STUDENT. Simulate the career of students attending Politecnico
+
+SIR. Simulate the spread of a disease (SIR model: Susceptible Infected Removed). Removes stands for immune or dead.
+
+NATURE. Simulate natural selection
+
+For each of these system, describe:
+
+1. The main questions to address
+2. Which stochastic models are relevant for the system.
+3. The main inputs.
+4. The main output metrics.
+
+1) Simulate how a social media post spreads through a network:
+
+- MAIN QUESTION TO ADDRESS: how information or content propagates through a network of users. What are the conditions that makes a post spread more (or go viral)?
+- RELEVANT STOCHASTIC MODELS: A social media content starts its journey from a user who creates it, presumably all the users related to him (friends/followers) would see this content. This is not enough for it to spread through the network, these related users need to interact with this content for it to be seen by new users who are not directly related to the content creator. We can think of this interaction as the stochastic part of the spread. 
+    - This can be modelled as an independent cascade system, where each user has a probability of interacting with the content in order for new users to see it. 
+    - We can also think of dividing the type of user based on their behaviour: some users might be more active in the social and have a tendency to share more the post they encounter, others might not. 
+    - Another stochastic model is the independent one that describe the rate at which user typically create posts. Presumably it will be describe by a Poisson distribution but users can have different behaviour (some may create more content than other). Maybe the number of content created is related to the probability that the user can produce a viral post?
+- MAIN INPUTS: Rate of new post creation per user.  Probability of interacting (sharing, liking) with the social media post of a user. Number of categories with their probability factor to share the content. 
+- MAIN OUTPUT METRICS: Numbers of interacted post per user. Number of total post encountered. Number of total post created. Number of times a post has been shared. Number of time a post has been seen. 
+
+2) Simulate stock market prices:
+
+- MAIN QUESTION TO ADDRESS: what are the conditions that let the prices on the stock market change? In which condition we can se decreasing in price and in which other we can see encreasing?
+- RELEVANT STOCHASTIC MODELS: Stock market prices can have complex and unpredictable dynamics. They can be modeled by:
+    - the geometric Brownian motion model. In this model the rate of return is viewed as a constant value subject to perturbations. 
+- MAIN INPUTS: Rate of changes in price per hour. Drift, the expected rate of return over time that an asset generate.  
+- MAIN OUTPUT METRICS: Total return/lost in value. Difference in value between the start and the end of the simulation. 
+
+3) Simulate the career of students attending Politecnico
+
+- MAIN QUESTION TO ADDRESS:  what are the factors that contribuite to a faster accademic progress at Polito? 
+- RELEVANT STOCHASTIC MODELS: students typically have a fixed number of try of an exam each year. Over the entire year this the success/failure of each exame test can lead to a faster/slower university career. We can think about a system like this one as an Discrete Event Simulation and each exam has a probability to be passed. Another model that can simulate this system is with the use of markov chains. The students follow a progression through each year at university and the markov chains can model this type of progression in transitioning of different accademic year.
+- MAIN INPUTS: Numbers of try per exam per year. Probability to pass an exam. Number of followed cousers per semestre. 
+- MAIN OUTPUT METRICS:
+
+4) Simulate the spread of a disease (SIR model: Susceptible Infected Removed). Removes stands for immune or dead.
+
+    - MAIN QUESTION TO ADDRESS: This system is similar to the one about the social media content but with an important change. The user are not involved in the decision on sharing or not the disease. More likely the user would not know if they have the deasease and start to spread unwittingly.
+- RELEVANT STOCHASTIC MODELS:  One of the major change is that users can be divided based on the susceptibility that they have with the deasease (this is the SIR model). There are also other variant of this model that can be used for the simulation of tipe of system: the SEIR Model, similar to the SIR but in which is included an exposed compartment to account for the incubation time. SIS Model, that describe a deasease in which a used can reencounter the disease and re-develop the illness again. 
+- MAIN INPUTS: Population demographics, transmission rate, recovery rate, incubation and infectious period, mortality rate, vaccination parameters
+- MAIN OUTPUT METRICS: Total number of infected, total number of recovered, total number of deaths, active cases, hospitalizations
+
+5) Simulate natural selection
+
+- MAIN QUESTION TO ADDRESS: What type of condition cause the survaival of an individual with a genetic variation?
+- RELEVANT STOCHASTIC MODELS: Moral Model, this model is able to simulate the probability of an allele to be present and in which quantity in a population. Random events are reproduction, mutation and selection. Another model is the Wright-Fisher model, it involves discrete generations and random sampling of alleles during reproduction, making it particularly useful for modeling genetic. Then there is the system that is able to simulate Haploid and Diploid organisms. Then the natural selection has to be simulate also fot he birth-death of the individuals.
+- MAIN INPUTS: Population size, initial allele frequencies, mutation rate
+- MAIN OUTPUT METRICS: Allele frequencies, number of deaths of allele, number of new allele born, number of new individuals with evoluted factors, population size during the simulation. 
