@@ -92,11 +92,17 @@ class Generator:
     # we can generate normal random variables with the method explained in the slides: generating before 
     # normal random variables between [0,1) and then scaling to obtain the desider distribution
     def normal(self, mu, sigma, size=1_000):
+        num_pairs = size//2
+        # this is for andling the case where size is an odd number
+        if size % 2:
+            num_pairs += 1
         # calculating random values for the polar coordinates
-        B = (self.chi_squared(ddof=2, size = int(size/2))) ** .5 # the radius
-        theta = 2 * np.pi * self.uniform(size = int(size / 2)) # the angle
+        B = (self.chi_squared(ddof=2, size = num_pairs)) ** .5 # the radius
+        theta = 2 * np.pi * self.uniform(size = num_pairs) # the angle
         
         z = np.concatenate((B * np.cos(theta), B * np.sin(theta)), axis=0) # concatenating all the obtained variables
+        if size % 2:
+            z = z[:-1]
         return mu + sigma * z # scaling to obtain the desider distribution
 
     #-----------------------------------------------------------------------------------------------------------------------#
@@ -144,6 +150,26 @@ class FitAssessment:
         # is the confidence level in which it can be accept the data as following a given distribution
         self.sign_level = sign_level
         
+    def evaluation(self, two_moment, chi_squared, ks):
+        av_mean, em_mean, av_var, em_var = two_moment
+        mean_diff = abs(av_mean - em_mean) / av_mean
+        var_diff = abs(av_var - em_var) / av_var
+        
+        print(f'Mean Percentage deviation: {mean_diff*100:.2f}%')
+        print(f'Variance Percentage deviation: {var_diff*100:.2f}%')
+        
+        if mean_diff < .15 and var_diff < .15:
+            print(f'Both percentage differences are small enough')
+        else:
+            print(f'At least one of the two percentage differenceas are to large')
+        
+        if chi_squared > self.sign_level and ks > self.sign_level:
+            print(f'The two p_value are greater than the confidence level (α = {self.sign_level:.2f})')
+            print('The rangom generated variables follow the given distribution')
+        else:
+            print(f'At least one of the two p_value is smaller than the confidence level (α = {self.sign_level:.2f})')
+            print('The rangom generated variables DO NOT follow the given distribution')
+        
     def first_two_moment(self, data, distr_name, *params):
         if distr_name == 'Rayleigh':
             sigma, = params
@@ -163,52 +189,16 @@ class FitAssessment:
         elif distr_name == 'Beta':
             alpha, beta = params
             mean = alpha / (alpha+beta)
-            variance = alpha*beta / ((alpha + beta)**2) * (alpha + beta + 1)
+            variance = alpha*beta / (((alpha + beta)**2) * (alpha + beta + 1))
             
         elif distr_name == 'Rice':
             nu, sigma = params
-            mean = stats.rice.mean(b=nu/sigma, scale=sigma)
+            mean = stats.rice.mean(b=nu/sigma,loc=0, scale=sigma)
             variance = stats.rice.var(b=nu/sigma, scale=sigma)
             
-        print(f'Analitical mean: {mean:.4f} Empirical mean: {data.mean():.4f}')
-        print(f'Analitical variance: {variance:.4f} Empirical variance: {data.var():.4f}')
-
-    def external_ks_test(self, data, distr_name, *params):
-        p_value = 0
-        
-        if distr_name == 'Rayleigh':
-            (sigma,) = params
-            ks_statistic, p_value = stats.kstest(data, 'rayleigh', args=(0, sigma)) 
-        elif distr_name == 'Chi-Squared':
-            (k,) = params
-            ks_statistic, p_value = stats.kstest(data, 'chi2', args=(k,))  
-        elif distr_name == 'LogNormal':
-            mu, sigma = params
-            ks_statistic, p_value = stats.kstest(data, 'lognorm', args=(sigma, 0, np.exp(mu)))  
-        elif distr_name == 'Beta':
-            alpha, beta = params
-            ks_statistic, p_value = stats.kstest(data, 'beta', args=(alpha, beta))
-        elif distr_name == 'Rice':
-            nu, sigma = params
-            ks_statistic, p_value = stats.kstest(data, 'rice', args=(nu/sigma, 0, sigma))
-        elif distr_name == 'GammaVariate':
-            shape, rate = params  # Shape and rate parameters for gamma variate
-            ks_statistic, p_value = stats.kstest(data, 'gamma', args=(shape, 0, 1 / rate))
-        elif distr_name == 'Exponential':
-            lam, = params  # Rate parameter for exponential
-            ks_statistic, p_value = stats.kstest(data, 'expon', args=(0, 1 / lam))
-
-        # Check the p-value against alpha to determine whether to reject the null hypothesis
-        if p_value < self.sign_level:
-            print(f"p value = {p_value:.4f} < significance level = {self.sign_level:.4f} Reject the null hypothesis: Data does\
-                not follow the {distr_name} distribution.")
-        else:
-            print(f"{p_value:.4f} > {self.sign_level:.4f} Fail to reject the null hypothesis: Data\
-                follows the {distr_name} distribution.")
+        return mean, data.mean(), variance, data.var()
             
     def chi_squared_test(self, data, distr_name, *params):
-        
-        print(f'Chi-Squared test for {distr_name} distribution...')
         
         plt.figure(figsize=(8,6))
         
@@ -290,12 +280,13 @@ class FitAssessment:
         
         #print(f"Chi2 statistic: {chi2_stat}")
         
+        """
         if p_value < self.sign_level:
             print(f'p value = {p_value:.4f} < significance level = {self.sign_level:.4f} -> Reject the '\
                 + f'null hypothesis: Data does not follow the {distr_name} distribution.')
         else:
             print(f"p value = {p_value:.4f} < significance level = {self.sign_level:.4f} -> Fail to "\
-                +f"reject the null hypothesis: Data follows the {distr_name} distribution.")
+                +f"reject the null hypothesis: Data follows the {distr_name} distribution.")"""
         
         plt.hist(data, bins=50, density=True, alpha=0.5, label='Data Histogram')
         plt.xlabel('Value')
@@ -306,6 +297,8 @@ class FitAssessment:
         plt.savefig(file_name, dpi=300, bbox_inches='tight')
         plt.close()
         #plt.show()
+        
+        return p_value
     
     def ks_test(self, 
                 data, # is the data that should be evaluate
@@ -313,7 +306,6 @@ class FitAssessment:
                 *params # here there are the parameters that should describe the distribution of the data
                 ):
         data_sorted = np.sort(data)
-        print(f'Kolmogorov-Smirnov Test for {distr_name} distribution')
         
         # ECDF function for the K-S test
         n = len(data_sorted)
@@ -374,18 +366,19 @@ class FitAssessment:
         
         # Critical Value
         # Critical Value for the test
-        critical_value = ksone.ppf(1 - self.sign_level / 2, n)        
+        #critical_value = ksone.ppf(1 - self.sign_level / 2, n)        
         
         # p-value
         p_value = 1 - ksone.sf(Dmax, n)
         
+        """
         # Compare D with the critical value
         if Dmax <= critical_value:
             print(f"D ({Dmax:.4f}) <= Critical Value ({critical_value:.4f}): Fail to reject the null hypothesis -> "\
                 + f"data follows the {distr_name} distribution")
         else:
             print(f"D ({Dmax:.4f}) > Critical Value ({critical_value:.4f}): Reject the null hypothesis -> "\
-                + f"data does not follow the {distr_name} distribution")         
+                + f"data does not follow the {distr_name} distribution")    """
         
         # Plot the ECDF and CDF        
         plt.xlabel('Value')
@@ -397,6 +390,37 @@ class FitAssessment:
         #plt.show()
         plt.close()
         
+        return p_value   
+
+def print_table(row):
+    an_mean, em_mean, an_var, em_var, chi_p_value, ks_p_value = row
+
+    data = [
+        [an_mean, an_var, ""],
+        [em_mean, em_var, ""],
+        ["", "", chi_p_value],
+        ["", "", ks_p_value]
+    ]
+
+    headers = ['Mean', 'Variance', 'p_value']
+    row_headers = ["Analitical", "Empirical", "Chi-Squared test", "KS-test"]
+    # Format the data
+    formatted_data = [[f"{item:.4f}" if isinstance(item, float) else str(item) for item in row] for row in data]
+
+    # Calculate the maximum width for each column
+    max_widths = [max([len(row[i]) for row in formatted_data] + [len(headers[i])]) for i in range(len(headers))]
+
+    # Calculate the maximum width for the row headers
+    max_row_header_width = max(len(header) for header in row_headers)
+
+    # Print the table
+    print("-" * (sum(max_widths) + 3 * len(headers) + max_row_header_width + 3))
+    print("| " + "".ljust(max_row_header_width) + " | " + " | ".join([headers[i].ljust(max_widths[i]) for i in range(len(headers))]) + " |")
+    print("-" * (sum(max_widths) + 3 * len(headers) + max_row_header_width + 3))
+    for i in range(len(formatted_data)):
+        print("| " + row_headers[i].ljust(max_row_header_width) + " | " + " | ".join([formatted_data[i][j].ljust(max_widths[j]) for j in range(len(formatted_data[i]))]) + " |")
+    print("-" * (sum(max_widths) + 3 * len(headers) + max_row_header_width + 3))
+
     
 if __name__ == '__main__':
     
@@ -408,63 +432,82 @@ if __name__ == '__main__':
     
     gen = Generator()
     fit = FitAssessment(.05)
-    size = 1_000
+    sizes = [100_000, 10_000, 1_000]
     
-    #-----------------------------------------------------------------------------------------------------------------------#
-    # RAYLEIGH EVALUATION
-    #
-    sigma = 3
-    print(f'\n============================================================\n')
-    data = gen.rayleigh(sigma,size)
-    fit.first_two_moment(data, 'Rayleigh', sigma)
-    fit.chi_squared_test(data, 'Rayleigh', sigma)
-    fit.ks_test(data, 'Rayleigh', sigma)
-    #fit.external_ks_test(data, 'Rayleigh', sigma)
-    print(f'\n============================================================\n')
-    
-    #-----------------------------------------------------------------------------------------------------------------------#
-    # CHI-SQUARED EVALUATION
-    #
-    k = 10
-    data = gen.chi_squared(ddof=k, size=size)
-    fit.first_two_moment(data, 'Chi-Squared', k)
-    fit.chi_squared_test(data, 'Chi-Squared', k)
-    fit.ks_test(data, 'Chi-Squared', k)
-    #fit.external_ks_test(data, 'Chi-Squared', k)
-    print(f'\n============================================================\n')
-    
-    #-----------------------------------------------------------------------------------------------------------------------#
-    # LOGNORMAL EVALUATION
-    #
-    mu = 15
-    sigma = 1
-    data = gen.log_normal(mu, sigma, size)
-    fit.first_two_moment(data, 'LogNormal', mu, sigma)
-    fit.chi_squared_test(data, 'LogNormal', mu, sigma)
-    fit.ks_test(data, 'LogNormal', mu, sigma)
-    #fit.external_ks_test(data, 'LogNormal', mu, sigma)
-    print(f'\n============================================================\n')    
-    
-    #-----------------------------------------------------------------------------------------------------------------------#
-    # BETA EVALUATION
-    #
-    alpha = 5
-    beta = 10
-    data = gen.beta(alpha,beta,size)
-    fit.first_two_moment(data, 'Beta', alpha, beta)
-    fit.chi_squared_test(data, 'Beta', alpha, beta)
-    fit.ks_test(data, 'Beta', alpha, beta)
-    #fit.external_ks_test(data, 'Beta', alpha, beta)
-    print(f'\n============================================================\n')
-    
-    
-    #-----------------------------------------------------------------------------------------------------------------------#
-    # RICE EVALUATION
-    #
-    nu = 0
-    sigma = 1
-    data = gen.rice(nu,sigma,size=size)
-    fit.first_two_moment(data, 'Rice', nu, sigma)
-    fit.chi_squared_test(data, 'Rice', nu, sigma)
-    fit.ks_test(data, 'Rice', nu, sigma)
-    #fit.external_ks_test(data, 'Rice', nu, sigma)
+    for size in sizes:
+        
+        #-----------------------------------------------------------------------------------------------------------------------#
+        # RAYLEIGH EVALUATION
+        #
+        sigma = 3
+        data = gen.rayleigh(sigma,size)
+        two_moment = fit.first_two_moment(data, 'Rayleigh', sigma)
+        chi_p_value = fit.chi_squared_test(data, 'Rayleigh', sigma)
+        ks_p_value = fit.ks_test(data, 'Rayleigh', sigma)
+        
+        print(f'\nRayleigh distribution (size={size}):')
+        print_table(two_moment + (float(chi_p_value),float(ks_p_value)))
+        fit.evaluation(two_moment, chi_p_value, ks_p_value)    
+        print(f'\n============================================================\n')
+        
+        #-----------------------------------------------------------------------------------------------------------------------#
+        # CHI-SQUARED EVALUATION
+        #
+        k = 10
+        data = gen.chi_squared(ddof=k, size=size)
+        two_moment = fit.first_two_moment(data, 'Chi-Squared', k)
+        chi_p_value = fit.chi_squared_test(data, 'Chi-Squared', k)
+        ks_p_value = fit.ks_test(data, 'Chi-Squared', k)
+        
+        print(f'Chi-Squared distribution (size={size}):')
+        print_table(two_moment + (float(chi_p_value),float(ks_p_value)))
+        fit.evaluation(two_moment, chi_p_value, ks_p_value)
+        print(f'\n============================================================\n')
+        
+        #-----------------------------------------------------------------------------------------------------------------------#
+        # LOGNORMAL EVALUATION
+        #
+        mu = 15
+        sigma = 1
+        data = gen.log_normal(mu, sigma, size)
+        two_moment = fit.first_two_moment(data, 'LogNormal', mu, sigma)
+        chi_p_value = fit.chi_squared_test(data, 'LogNormal', mu, sigma)
+        ks_p_value = fit.ks_test(data, 'LogNormal', mu, sigma)
+        
+        print(f'LogNormal distribution (size={size}):')
+        print_table(two_moment + (float(chi_p_value),float(ks_p_value)))
+        fit.evaluation(two_moment, chi_p_value, ks_p_value)
+        print(f'\n============================================================\n')    
+        
+        #-----------------------------------------------------------------------------------------------------------------------#
+        # BETA EVALUATION
+        #
+        alpha = 5
+        beta = 10
+        data = gen.beta(alpha,beta,size)
+        two_moment = fit.first_two_moment(data, 'Beta', alpha, beta)
+        chi_p_value = fit.chi_squared_test(data, 'Beta', alpha, beta)
+        ks_p_value = fit.ks_test(data, 'Beta', alpha, beta)
+        
+        print(f'Beta distribution (size={size}):')
+        print_table(two_moment + (float(chi_p_value),float(ks_p_value)))
+        fit.evaluation(two_moment, chi_p_value, ks_p_value)
+        print(f'\n============================================================\n')
+        
+        
+        #-----------------------------------------------------------------------------------------------------------------------#
+        # RICE EVALUATION
+        #
+        nu = 0
+        sigma = 1
+        data = gen.rice(nu,sigma,size=size)
+        two_moment = fit.first_two_moment(data, 'Rice', nu, sigma)
+        chi_p_value = fit.chi_squared_test(data, 'Rice', nu, sigma)
+        ks_p_value = fit.ks_test(data, 'Rice', nu, sigma)
+        
+        print(f'Rice distribution (size={size}):')
+        print_table(two_moment + (float(chi_p_value),float(ks_p_value)))
+        fit.evaluation(two_moment, chi_p_value, ks_p_value)
+        print(f'\n============================================================\n')
+    print('I saved the graphs directly in a subdirectory for the case size=1_000 (in the other cases '\
+        +'the two lines are indistinguishable)')
