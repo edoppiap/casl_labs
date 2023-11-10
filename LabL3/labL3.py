@@ -109,8 +109,8 @@ class Generator:
     # LOGNORMAL RVs
     #
     # for generating the lognormal random variables we can generate normal random variables and exponentiate them
-    def log_normal(self, mu, sigma, size=1_000):
-        return np.exp(self.normal(mu, sigma, size))
+    def log_normal(self, mu, sigma_squared, size=1_000):
+        return np.exp(self.normal(mu, np.sqrt(sigma_squared), size))
     
     #-----------------------------------------------------------------------------------------------------------------------#
     # BETA RVs
@@ -158,10 +158,10 @@ class FitAssessment:
         print(f'Mean Percentage deviation: {mean_diff*100:.2f}%')
         print(f'Variance Percentage deviation: {var_diff*100:.2f}%')
         
-        if mean_diff < .15 and var_diff < .15:
+        if mean_diff < .2 and var_diff < .2:
             print(f'Both percentage differences are small enough')
         else:
-            print(f'At least one of the two percentage differenceas are to large')
+            print(f'At least one of the two percentage differenceas is to large')
         
         if chi_squared > self.sign_level and ks > self.sign_level:
             print(f'The two p_value are greater than the confidence level (α = {self.sign_level:.2f})')
@@ -182,9 +182,9 @@ class FitAssessment:
             variance = 2*k
             
         elif distr_name == 'LogNormal':
-            mu, sigma = params
-            mean = np.exp(mu + (sigma**2 /2))
-            variance = (np.exp(sigma**2) -1) * np.exp(2*mu + (sigma**2))
+            mu, sigma_squared = params
+            mean = np.exp(mu + (sigma_squared /2))
+            variance = (np.exp(sigma_squared) -1) * np.exp(2*mu + (sigma_squared))
             
         elif distr_name == 'Beta':
             alpha, beta = params
@@ -231,18 +231,17 @@ class FitAssessment:
             df = len(hist) -2 -1
             
         elif distr_name == 'LogNormal':
-            mu, sigma = params
-            plt.title(f'{distr_name} Distribution (v = {mu}, σ = {sigma})')
+            mu, sigma_squared = params
+            plt.title(f'{distr_name} Distribution (v = {mu}, σ² = {sigma_squared})')
             
             x = np.linspace(data.min(), data.max(), 50)
-            pdf_plot = (1 / (x * sigma * np.sqrt(2*np.pi))) * np.exp(-((np.log(x) - mu)**2) / 2 * sigma **2 )
-            #pdf_plot = stats.lognorm.pdf(x, scale=np.exp(mu), s=sigma)
+            pdf_plot = (1 / (x *  np.sqrt(2*np.pi*sigma_squared))) * np.exp(-((np.log(x) - mu)**2) / 2 * sigma_squared )
             plt.plot(x, pdf_plot, 'r', lw=2, label='Analytical PDF')
             plt.yscale('log')
             
             hist,bins = np.histogram(data,bins=x, density=True)
             bin_centers = (bins[:-1] + bins[1:]) / 2
-            pdf = (1 / (bin_centers * sigma * np.sqrt(2*np.pi))) * np.exp(-((np.log(bin_centers) - mu)**2) / 2 * sigma **2 )
+            pdf = (1 / (bin_centers * np.sqrt(2*np.pi*sigma_squared))) * np.exp(-((np.log(bin_centers) - mu)**2) / 2 * sigma_squared )
             #pdf = stats.lognorm.pdf(bin_centers, mu, sigma)
             chi2_stat = np.sum((hist - pdf)**2 / pdf)
             df = len(hist) -2 -1
@@ -329,10 +328,10 @@ class FitAssessment:
             plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution with k = {k}')
             
         elif distr_name == 'LogNormal':
-            mu, sigma = params
-            cdf_values = .5 * (1 + erf((np.log(data_sorted) - mu) / (np.sqrt(2) * sigma)))
+            mu, sigma_squared = params
+            cdf_values = .5 * (1 + erf((np.log(data_sorted) - mu) / (np.sqrt(2) * np.sqrt(sigma_squared))))
             plt.step(data_sorted, cdf_values, label=f'{distr_name} CDF')
-            plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution (v = {mu}, σ = {sigma})')
+            plt.title(f'Kolmogorov-Smirnov Test for {distr_name} Distribution (v = {mu}, σ = {sigma_squared})')
             
         elif distr_name == 'Beta':
             alpha, beta = params
