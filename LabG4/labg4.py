@@ -162,22 +162,18 @@ if __name__ == '__main__':
     
     dfs = []
     
-    bar_format = '{l_bar}{bar}| {n_fmt}/{total_fmt} combinations [{elapsed}<{remaining}, {rate_fmt}{postfix}]'
+    bar_format = '{l_bar}{bar}| {n_fmt}/{total_fmt} combinations '\
+        +'[{elapsed}<{remaining}, {rate_fmt}{postfix}]'
     
     # foor loop for each combination of parameters
     for total_exams, succ_prob, max_exam_per_sess, av_exams_per_sess, var_exams in \
         tqdm(param_comb, desc='Simulating all combinations of input parameters', 
              bar_format=bar_format):
-        #print('Simulation parameters:')
-        #print(f'|  Total exams  | Success probability  |  Max exam per session  | Average exams taken per session | Var exams |')
-        #print('|'+f'{total_exams}'.center(15)+'|'+f'{succ_prob*100:.2f}%'.center(22)\
-        #    +'|'+f'{max_exam_per_sess}'.center(24)+'|'+f'{av_exams_per_sess}'.center(33)+\
-        #        '|'+f'{var_exams}'.center(11)+'|')
         
         studs_batch = 10 # num of students we add each iteration
         
         # INITIALIZZATION
-        acc_grades, acc_periods = 0 
+        acc_grades, acc_periods = 0,0
         grades, periods = None, None
         
         # Continue to add students until the accuracies have reached the level of acceptance
@@ -246,14 +242,6 @@ if __name__ == '__main__':
             'Num Students': len(periods)
         }
         dfs.append(pd.DataFrame([result]))
-            
-        #mean_grade = sum(stud.calculate_grade() for stud in graduated) / len(graduated)
-        #av_time = sum(stud.num_session_passed for stud in graduated)*2 / len(graduated) # each mini-session happen every two months
-        #print('Simulation ended.')
-        #print(f'Average time for the graduation: {av_time} months ({av_time/12:.2f} years)')
-        #print(f'Average grade results: {mean_grade:.2f}')
-        #print(f'Total number of sessions: {semester_num}')
-        #print('\n------------------------------------------------------------------------\n')
     
     df_result = pd.concat(dfs, ignore_index=True)
     save_df(df_result)
