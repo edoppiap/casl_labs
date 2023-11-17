@@ -25,10 +25,10 @@ Number of exam per session = 2
 #
 PARAMS_GRID = {
     'total_exams' : [12,15,20], # the total number of exams for the graduation
-    'succ_prob' : [.2, .4, .5, .7, .8], # the probability that a student success at an exam
-    'max_exam_per_sess' : [3,4], # the number of exams that a student can try each session
-    'av_exam_per_sess' : [3,2], # the number of exams taken in average from each student
-    'var_exam_per_sess' : [0,2] # the variance in the number of exam taken from different student
+    'succ_prob' : [.2, .4, .6, .8], # the probability that a student success at an exam
+    'max_exam_per_sess' : [1,2,3,4], # the number of exams that a student can try each session
+    'av_exam_per_sess' : [4,3,2,1] # the number of exams taken in average from each student
+    #'var_exam_per_sess' : [0,2] # the variance in the number of exam taken from different student
 }
 
 # distribution of the grade based on history data
@@ -45,7 +45,7 @@ np.random.seed(42)
 #--------------------------------------------------------------------------------------------------------#
 # UTILS
 #
-def save_df(df):
+def save(df, *arrays):
     script_directory = os.path.dirname(os.path.abspath(__file__))
     current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
     folder_path = os.path.join(script_directory, 'outputs',current_time)
@@ -54,83 +54,51 @@ def save_df(df):
         
     file_name = os.path.join(folder_path, 'results.csv')
     df.to_csv(file_name, index=False)
-
+    
+    file_name = os.path.join(folder_path, 'arrays.npy')
+    with open(file_name, 'wb') as f:
+        for array in arrays:
+            np.save(f, array)
 
 # -------------------------------------------------------------------------------------------------------#
-# STUDENT DATA STRUCTURE
+# GRADE RANDOM GENERATION
+#      
+# Generation of a random grades based on the input grade distribution
+def calculate_grade():
+    return np.random.choice(np.arange(18,31), p=grade_probs)
+
+# -------------------------------------------------------------------------------------------------------#
+# RANDOM ELEMENT
+# 
+# for the number of exams that each student try:
+# this generate a single random number from the average 
+# not greater than the max exams possible and the num exams left
+# in this way each student can try a different num of exams 
+def generate_num_exams(av_exams, max_exams, exams_left):
+    minimum_max = np.minimum(max_exams, exams_left)
+    return np.minimum(np.random.poisson(av_exams), minimum_max)
+
+# -------------------------------------------------------------------------------------------------------#
+# BERNULLI EXPERIMENT
 #
-#
-class Student:
-    def __init__(self, total_exams, av_exam, var_exam):
-        self.num_session_passed = 0
-        self.total_exams = total_exams
-        self.av_exams_per_sess = av_exam
-        self.var_exams = var_exam
-        self.exams = []
+# rule the success/failure of an exam
+def take_exams(exam_to_try, succ_prob):
+    tried = 0
+    passed = []
     
-    # Bernulli experiment that rule the success/failure of an exam
-    def take_exams(self, max_exams, success_prob):
-        self.num_session_passed += 1
-        
-        #------------------------------------------------------------#
-        # RANDOM element for the number of exams that each student try:
-        # this generate a single random number from the average and 
-        # the var, each student can so try a different num of exams 
-        exam_to_try = int(np.round(
-            np.random.normal(loc=self.av_exams_per_sess, 
-                             scale=self.var_exams,
-                             size=1))
-                          )
-        # a student cannot try more than max_exams each session
-        exam_to_try = exam_to_try if exam_to_try <= max_exams else max_exams
-        
-        # function that simulate the student that takes n exams 
-        # and calculate the outcome
-        for _ in range(exam_to_try):
-            if np.random.random() < success_prob:
-                self.exams.append(self.calculate_grade())
-            if self.has_finished():
-                break
+    # the bernulli experiment is repeated n = exam_to_try times
+    for _ in range(exam_to_try):
+        tried += 1
+        if np.random.random() < succ_prob:
+            passed.append(calculate_grade())
             
-    # The grade distribution has been generated from the data given in the Lab
-    def calculate_grade(self):
-        return np.random.choice(np.arange(18,31), p=grade_probs)
-    
-    # Returns true if the student has no more exams to take
-    def has_finished(self):
-        return len(self.exams) == self.total_exams
-    
-    # Returns the grade of the exam taken
-    def final_grade(self):
-        return sum(self.exams) / len(self.exams)
+    return tried, passed
 
-# -------------------------------------------------------------------------------------------------------#
-# SESSION DATA STRUCTURE
-#
-#
-class Session:
-    def __init__(self,semester_num, max_exam_per_sess):
-        self.semester_num = semester_num
-        self.max_exams = max_exam_per_sess
-        
-    def __lt__(self, other):
-        return self.semester_num < other.semester_num
-    
-    
 # -------------------------------------------------------------------------------------------------------#
 # CONDIFENCE INTERVAL METHOD
 #
 #
 def calculate_confidence_interval(data, conf):
-    """
-    This will perform an estimate of the average of the population and return the confidence interval 
-    with its accuracy. It use the scipy.stats.t.interval function and it returns a coupla with 
-    containing (interval,accuracy)
-
-    :param X: sample for which estimate the average and the confidence interval
-    :param C: the choosen confidence intervla
-    :return: ((lower_bound,upper_bound),float64)
-    """
     
     mean = data.mean()
     std = data.std(ddof=1)
@@ -147,7 +115,7 @@ def calculate_confidence_interval(data, conf):
     re = (MOE / (2 * abs(mean))) # this is the relative error
     acc = 1 - re # this is the accuracy
     return interval,acc
-    
+        
 # -------------------------------------------------------------------------------------------------------#
 # MAIN FUNCTION
 #
@@ -160,88 +128,101 @@ if __name__ == '__main__':
     # combination of the input parameters
     param_comb = list(itertools.product(*PARAMS_GRID.values()))
     
-    dfs = []
-    
     bar_format = '{l_bar}{bar}| {n_fmt}/{total_fmt} combinations '\
         +'[{elapsed}<{remaining}, {rate_fmt}{postfix}]'
     
+    dfs = []
+    lst_grades = []
+    #lst_grades,lst_periods, lst_tried = [],[],[]
+        
     # foor loop for each combination of parameters
-    for total_exams, succ_prob, max_exam_per_sess, av_exams_per_sess, var_exams in \
+    for total_exams, succ_prob, max_exam_per_sess, av_exams_per_sess in \
         tqdm(param_comb, desc='Simulating all combinations of input parameters', 
              bar_format=bar_format):
-        
-        studs_batch = 10 # num of students we add each iteration
-        
-        # INITIALIZZATION
-        acc_grades, acc_periods = 0,0
-        grades, periods = None, None
-        
-        # Continue to add students until the accuracies have reached the level of acceptance
-        while acc_grades < ACC_ACCEPTANCE or acc_periods < ACC_ACCEPTANCE:
             
-            # FES DATA STRUCTURE
-            sessions = PriorityQueue()
-            semester_num = 1
+            # choosed because with this value I can reach an accettable accuracy
+            # without simulating too many students
+            studs_batch = 10
             
-            sessions.put(Session(semester_num, max_exam_per_sess))
-        
-            students = [Student(total_exams, av_exams_per_sess, var_exams) for _ in range(studs_batch)]
+            # INITIALIZZATION
+            acc_grades, acc_periods, acc_exams_tried = 0,0,0
+            grades, lst_session_passed,lst_exam_tried = None, None, None
             
             #------------------------------------#
-            # EVENT LOOP
-            #
-            while semester_num < SIM_TIME:
-                if sessions.empty():
-                    break
-                
-                # get the next session from the FES
-                session = sessions.get()
-                semester_num = session.semester_num
-                
-                for stud in students:
-                    stud.take_exams(session.max_exams, succ_prob)
-                    if stud.has_finished():
-                        students.remove(stud) # remove from the student that have to graduate
+            # LOOP UNTIL AN ACCETTABLE ACCURACY HAS REACHED
+            # 
+            # Continue to add students until the accuracies have reached the level of acceptance
+            while acc_grades < ACC_ACCEPTANCE or \
+                acc_periods < ACC_ACCEPTANCE or \
+                acc_exams_tried < ACC_ACCEPTANCE:
+            
+                # for computation convenience we simulate 'studs_batch' before computing the confidence intervals
+                for _ in range(studs_batch):
+                    exams_passed = []
+                    exam_tried, session_passed = 0,0
+                    
+                    #------------------------------------#
+                    # CARRER OF A SINGLE STUDENT
+                    #
+                    while len(exams_passed) < total_exams: # exit when all exams have been passed
+                        exams_to_try = generate_num_exams(av_exams=av_exams_per_sess,
+                                                          max_exams=max_exam_per_sess,
+                                                          exams_left= total_exams - len(exams_passed))
+                        tried,passed = take_exams(exams_to_try, succ_prob)
+                        session_passed +=1
+                        exam_tried += tried
+                        exams_passed += passed
                         
-                        # fill the arrays for the evaluation with its statistics
-                        if grades is None and periods is None:
-                            # the case where it's the first student
-                            grades = np.array([exam for exam in stud.exams])
-                            periods = np.array(stud.num_session_passed)
-                        else:
-                            grades = np.vstack([grades, [exam for exam in stud.exams]])
-                            periods = np.hstack([periods, stud.num_session_passed])
+                    # store the result into np.arrays
+                    if grades is None and \
+                        lst_session_passed is None and \
+                        lst_exam_tried is None:
+                        grades = np.array(exams_passed)
+                        lst_session_passed = np.array(session_passed)
+                        lst_exam_tried = np.array(exam_tried)
+                    else:
+                        grades = np.vstack([grades, exams_passed])
+                        lst_session_passed = np.hstack([lst_session_passed, session_passed])
+                        lst_exam_tried = np.hstack([lst_exam_tried, exam_tried])
                 
-                if stud: # there are still students that have to graduate
-                    # create a new session 
-                    sessions.put(Session(semester_num+1, max_exam_per_sess))
-            
-            #------------------------------------#
-            # CONFIDENCE LEVEL
-            #
-            interval,acc_grades = calculate_confidence_interval(grades, CONFIDENCE_LEVEL)
-            interval_2, acc_periods = calculate_confidence_interval(periods, CONFIDENCE_LEVEL)
-            
-        # Store the input parameters with the results
-        result = {
-            'Total exams': total_exams,
-            'Success probability': succ_prob,
-            'Max Exams per session': max_exam_per_sess,
-            'Average exam per session': av_exams_per_sess,
-            'Variance exams per session': var_exams,
-            'Grade Mean': grades.mean(),
-            'Grade Std': grades.std(ddof=1),
-            'Grade Interval low': interval[0],
-            'Grade Interval up': interval[1],
-            'Accuracy Grade': acc_grades,
-            'Period mean': periods.mean(),
-            'Period Std': periods.std(ddof=1),
-            'Period Interval low': interval_2[0],
-            'Period Interval up': interval_2[1],
-            'Accuracy Period': acc_periods,
-            'Num Students': len(periods)
-        }
-        dfs.append(pd.DataFrame([result]))
+                #------------------------------------#
+                # CONFIDENCE LEVEL
+                #
+                interval,acc_grades = calculate_confidence_interval(grades, CONFIDENCE_LEVEL)
+                interval_2, acc_periods = calculate_confidence_interval(lst_session_passed, CONFIDENCE_LEVEL)
+                interval_3, acc_exams_tried = calculate_confidence_interval(lst_exam_tried, CONFIDENCE_LEVEL)
+                
+            # Store the input parameters with the results
+            result = {
+                'Total exams': total_exams,
+                'Success probability': succ_prob,
+                'Max Exams per session': max_exam_per_sess,
+                'Average exam per session': av_exams_per_sess,
+                #'Variance exams per session': var_exams,
+                'Grade Mean': grades.mean(),
+                'Grade Std': grades.std(ddof=1),
+                'Grade Interval low': interval[0],
+                'Grade Interval up': interval[1],
+                'Accuracy Grade': acc_grades,
+                'Period mean': lst_session_passed.mean(),
+                'Period Std': lst_session_passed.std(ddof=1),
+                'Period Interval low': interval_2[0],
+                'Period Interval up': interval_2[1],
+                'Accuracy Period': acc_periods,
+                'Tried Mean': lst_exam_tried.mean(),
+                'Tried Std': lst_exam_tried.std(ddof=1),
+                'Tried Interval low': interval_3[0],
+                'Tried Interval up': interval_3[1],
+                'Accuracy Tried': acc_exams_tried,
+                'Num Students': len(lst_session_passed)
+            }
+            dfs.append(pd.DataFrame([result]))
+            lst_grades.append(grades.flatten())
+            #lst_periods.append(lst_session_passed)
+            #lst_tried.append(lst_exam_tried)
     
     df_result = pd.concat(dfs, ignore_index=True)
-    save_df(df_result)
+    lst_grades = np.hstack(lst_grades)
+    #lst_periods = np.concatenate(lst_periods)
+    #lst_tried = np.concatenate(lst_tried)
+    save(df_result, lst_grades)
