@@ -11,6 +11,7 @@ import pandas as pd
 import os
 from datetime import datetime
 import pickle
+import matplotlib.pyplot as plt
 
 """
 Simulate the career of students attending Politecnico:
@@ -53,12 +54,175 @@ def save_outputs(df, results):
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
         
-    file_name = os.path.join(folder_path, 'results.csv')
-    df.to_csv(file_name, index=False)
-    
-    file_name = os.path.join(folder_path, 'results.pkl')
-    with open(file_name, 'wb') as f:
-        pickle.dump(results, f)
+    bar_format = '{l_bar}{bar}| {n_fmt}/{total_fmt} operations '\
+        +'[{elapsed}<{remaining}, {rate_fmt}{postfix}]'
+        
+    with tqdm(total=7, desc=f'Saving the outputs in outputs/{current_time}', bar_format=bar_format) as pbar:
+            
+        file_name = os.path.join(folder_path, 'results.csv')
+        df.to_csv(file_name, index=False)
+        
+        pbar.update(1)
+        
+        file_name = os.path.join(folder_path, 'results.pkl')
+        with open(file_name, 'wb') as f:
+            pickle.dump(results, f)
+            
+        pbar.update(1)
+        
+        #-----------------------------------------#
+        # PLOT THE FINAL GRADE DISTRIBUTION
+        #
+        honours = False
+        n_simulation_to_plot = 0
+        # the prob to have honours is so low that this assure the plotted is one with at least one
+        while not honours: 
+            for i,simulation in enumerate(results):
+                honours = 0
+                graduations = []
+                for grades,_,_ in simulation:
+                    grade, honour = calculate_final_grade(grades)
+                    graduations.append(grade)
+                    honours += honour
+                
+                # Simulation to plot found
+                if honours and int(df.loc[i][1] > .4): 
+                    tot_exams, succ_prob, max_exams, av_exams = df.loc[i][:4]
+                    
+                    plt.figure(figsize=(18,5))
+                    
+                    bins = (np.arange(66,112)-.4)
+                    n, bins, _ = plt.hist(graduations, bins=bins, edgecolor='black', width=0.8)
+                    plt.title(f'Histogram of final grades')
+                    plt.xlabel('Grades')
+                    plt.ylabel('Frequency')
+                    plt.text(82, max(n)-10, f'N. students with honours: {honours}\nNumber of exams = {tot_exams:.0f}' \
+                        + f'\nSuccess Probability = {succ_prob*100:.0f}%\nAv. n. exams per session = {av_exams:.0f}', 
+                     bbox={'facecolor': 'lightgreen', 'pad': 10}, zorder=2)
+                    plt.yticks(np.arange(1,max(n),4))
+                    plt.xticks(np.arange(66,111))
+                    plt.grid(which='major', axis='y', linestyle='--', color='gray', alpha=0.6)
+                    file_name = os.path.join(folder_path, 'final_distr.')
+                    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+                    plt.close()
+                    #plt.show()
+                    
+                    n_simulation_to_plot = i
+                    break
+                
+        pbar.update(1)
+        
+        #-----------------------------------------#
+        # PLOT THE GRADE DISTRIBUTION
+        #
+        grades = [grade for grades,_,_ in results[n_simulation_to_plot] for grade in grades ]
+        bins = (np.arange(18,32)-.4)
+        n,_,_ = plt.hist(grades, bins=bins, edgecolor='black', width=0.8)
+        plt.title('Grade distribution ')
+        plt.xlabel('Grades')
+        plt.ylabel('Frequency')
+        plt.xticks(np.arange(18,31))
+        if (max(n) // 50) % 2:
+            plt.yticks(np.arange(0,max(n)+100, 100))
+        else:
+            plt.yticks(np.arange(0,max(n), 100))
+        plt.grid(True, linestyle='--', color='gray', alpha=0.6)
+        plt.text(18, max(n)-100, f'Number of exams = {tot_exams:.0f}'+\
+                        f'\nSuccess Probability = {succ_prob*100:.0f}%\nAv. n. exams per session = {av_exams:.0f}', 
+                     bbox={'facecolor': 'lightgreen', 'pad': 10}, zorder=2)
+        file_name = os.path.join(folder_path, "grades_distr")
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        plt.close()
+        #plt.show()
+        
+        pbar.update(1)
+        
+        #-----------------------------------------#
+        # PLOT FOR YEAR TO GRADUATE DISTRIBUTION
+        #
+        session_per_year = 6
+        years = [n_session/session_per_year for _,n_session,_ in results[n_simulation_to_plot]]
+
+        width = (max(years) - min(years)) / len(set(years))
+        n,bins,_ = plt.hist(years, edgecolor='black', width=width)
+        plt.title('Histogram of years to graduate')
+        plt.xlabel('years')
+        plt.xticks(bins)
+        plt.ylabel('Frequency')
+        plt.grid(True, linestyle='--', color='gray', alpha=0.6)
+        plt.text(max(years) * 2/3, max(n)-10, f'Number of exams = {tot_exams:.0f}'+\
+                        f'\nSuccess Probability = {succ_prob*100:.0f}%\nAv. n. exams per session = {av_exams:.0f}', 
+                     bbox={'facecolor': 'lightgreen', 'pad': 10}, zorder=2)
+        file_name = os.path.join(folder_path, 'year_to_grad')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        plt.close()
+        #plt.show()
+        
+        pbar.update(1)
+        
+        #---------------------------------------------#
+        # PLOT THE YEAR TO GRADUATE BASED ON PROB_SUCC
+        #
+        session_per_year = 6
+        for av_exams in df['Average exam per session'].unique():
+
+            selected_df = df[(df['Total exams'] == tot_exams) & 
+                        (df['Average exam per session'] == av_exams) & 
+                        (df['Max Exams per session'] == 2) ]
+            plt.plot(selected_df['Success probability'], selected_df['Period mean'] / session_per_year, marker='o', zorder=2,
+                    label=f'Average number of exam per session = {av_exams}')
+            plt.errorbar(selected_df['Success probability'], 
+                        selected_df['Period mean'] / session_per_year, 
+                        yerr=[(selected_df['Period mean'] - selected_df['Period Interval low']) / session_per_year, 
+                                (selected_df['Period Interval up'] - selected_df['Period mean']) / session_per_year],
+                        fmt='o', capsize=5, c='black', zorder=1)
+
+        plt.xlabel('Success probability')
+        plt.ylabel('Average years for the graduation')
+        #plt.yticks(np.arange(13))
+        plt.title('Success probability vs Average years for the graduation')
+        plt.grid(True)
+        plt.legend()
+        plt.text(.5, max(selected_df['Period mean'] / session_per_year)-5, f'Number of exams = {tot_exams:.0f}'+\
+                        f'\nSuccess Probability = {succ_prob*100:.0f}%\nAv.e n. exams per session = {av_exams:.0f}', 
+                     bbox={'facecolor': 'lightgreen', 'pad': 10}, zorder=2)
+        file_name = os.path.join(folder_path, 'prob_succ_years')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        plt.close()
+        #plt.show()
+        
+        pbar.update(1)
+        
+        #---------------------------------------------#
+        # PLOT THE NUM OF TRIES BASED ON PROB_SUCC
+        #
+        for av_exams in df['Average exam per session'].unique():
+            selected_df = df[(df['Total exams'] == tot_exams) & 
+                        (df['Average exam per session'] == av_exams) & 
+                        (df['Max Exams per session'] == 2) ]
+            plt.plot(selected_df['Success probability'], selected_df['Tried Mean'], marker='o', zorder=2,
+                label=f'Average number of exam per session = {av_exams}')
+            plt.errorbar(selected_df['Success probability'], 
+                        selected_df['Tried Mean'] , 
+                        yerr=[selected_df['Tried Mean'] - selected_df['Tried Interval low'], 
+                            selected_df['Tried Interval up'] - selected_df['Tried Mean']],
+                        fmt='o', capsize=5, c='black', zorder=1)
+
+        plt.xlabel('Success probability')
+        plt.ylabel('Average tries before the graduation')
+        #plt.yticks(np.arange(13))
+        plt.title('Success probability vs Average n_tries \nwith Confidence Interval ')
+        plt.grid(True)
+        plt.legend()
+        plt.text(.5, max(selected_df["Tried Mean"] )-20, f'Number of exams = {tot_exams:.0f}'+\
+                        f'\nSuccess Probability = {succ_prob*100:.0f}%\nAv. n.  exams per session = {av_exams:.0f}', 
+                     bbox={'facecolor': 'lightgreen', 'pad': 10}, zorder=2)
+        file_name = os.path.join(folder_path, 'n_tries')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        plt.close()
+        #plt.show()
+        
+        pbar.update(1)
 
 # -------------------------------------------------------------------------------------------------------#
 # GRADE RANDOM GENERATION
