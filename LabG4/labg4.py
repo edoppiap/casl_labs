@@ -10,6 +10,7 @@ from scipy.stats import t
 import pandas as pd
 import os
 from datetime import datetime
+import pickle
 
 """
 Simulate the career of students attending Politecnico:
@@ -26,8 +27,8 @@ Number of exam per session = 2
 PARAMS_GRID = {
     'total_exams' : [12,15,20], # the total number of exams for the graduation
     'succ_prob' : [.2, .4, .6, .8], # the probability that a student success at an exam
-    'max_exam_per_sess' : [1,2,3,4], # the number of exams that a student can try each session
-    'av_exam_per_sess' : [4,3,2,1] # the number of exams taken in average from each student
+    'max_exam_per_sess' : [1,2], # the number of exams that a student can try each session
+    'av_exam_per_sess' : [2,1] # the number of exams taken in average from each student
     #'var_exam_per_sess' : [0,2] # the variance in the number of exam taken from different student
 }
 
@@ -45,7 +46,7 @@ np.random.seed(42)
 #--------------------------------------------------------------------------------------------------------#
 # UTILS
 #
-def save(df, *arrays):
+def save_outputs(df, results):
     script_directory = os.path.dirname(os.path.abspath(__file__))
     current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
     folder_path = os.path.join(script_directory, 'outputs',current_time)
@@ -55,10 +56,9 @@ def save(df, *arrays):
     file_name = os.path.join(folder_path, 'results.csv')
     df.to_csv(file_name, index=False)
     
-    file_name = os.path.join(folder_path, 'arrays.npy')
+    file_name = os.path.join(folder_path, 'results.pkl')
     with open(file_name, 'wb') as f:
-        for array in arrays:
-            np.save(f, array)
+        pickle.dump(results, f)
 
 # -------------------------------------------------------------------------------------------------------#
 # GRADE RANDOM GENERATION
@@ -100,8 +100,8 @@ def take_exams(exam_to_try, succ_prob):
 #
 def calculate_confidence_interval(data, conf):
     
-    mean = data.mean()
-    std = data.std(ddof=1)
+    mean = np.mean(data)
+    std = np.std(data, ddof=1)
     se = std / (len(data)**(1/2)) # this is the standard error
     
     interval = t.interval(confidence = conf, # confidence level
@@ -115,6 +115,44 @@ def calculate_confidence_interval(data, conf):
     re = (MOE / (2 * abs(mean))) # this is the relative error
     acc = 1 - re # this is the accuracy
     return interval,acc
+
+# -------------------------------------------------------------------------------------------------------#
+# CALCULATE FINAL GRADE
+#
+#
+def calculate_final_grade(grades):
+    final_points =  np.mean(grades) * 110/30
+    thesis = np.random.uniform(0,4,size=1)
+    presentation = np.random.uniform(0,2,size=1)
+    bonus = np.random.uniform(0,2,size=1)
+    
+    final_grade = final_points + thesis + presentation + bonus
+    
+    honours = final_grade[0] > 112.5
+    
+    final_grade = round(np.minimum(110, final_grade[0]))
+    
+    return final_grade, honours
+
+# -------------------------------------------------------------------------------------------------------#
+# SINGLE STUDENT CARREER
+#
+#
+def simulate_student_carreer(total_exams, av_exams, max_exams, succ_prob):
+    exams_passed = []
+    exam_tried, session_passed = 0,0
+    while len(exams_passed) < total_exams: # exit when all exams have been passed
+        exams_to_try = generate_num_exams(av_exams,
+                                            max_exams,
+                                            exams_left= total_exams - len(exams_passed))
+        tried,passed = take_exams(exams_to_try, succ_prob)
+        session_passed += 1
+        exam_tried += tried
+        exams_passed += passed
+        
+    #final_grade, honours = calculate_final_grade(passed)
+            
+    return exams_passed, session_passed, exam_tried
         
 # -------------------------------------------------------------------------------------------------------#
 # MAIN FUNCTION
@@ -132,7 +170,8 @@ if __name__ == '__main__':
         +'[{elapsed}<{remaining}, {rate_fmt}{postfix}]'
     
     dfs = []
-    lst_grades = []
+    simulation_results = []
+    #lst_grades = []
     #lst_grades,lst_periods, lst_tried = [],[],[]
         
     # foor loop for each combination of parameters
@@ -146,7 +185,7 @@ if __name__ == '__main__':
             
             # INITIALIZZATION
             acc_grades, acc_periods, acc_exams_tried = 0,0,0
-            grades, lst_session_passed,lst_exam_tried = None, None, None
+            results = []
             
             #------------------------------------#
             # LOOP UNTIL AN ACCETTABLE ACCURACY HAS REACHED
@@ -156,73 +195,52 @@ if __name__ == '__main__':
                 acc_periods < ACC_ACCEPTANCE or \
                 acc_exams_tried < ACC_ACCEPTANCE:
             
-                # for computation convenience we simulate 'studs_batch' before computing the confidence intervals
-                for _ in range(studs_batch):
-                    exams_passed = []
-                    exam_tried, session_passed = 0,0
-                    
+                # for computation convenience we simulate 'studs_batch' students before computing the confidence intervals
+                for _ in range(studs_batch):                    
                     #------------------------------------#
                     # CARRER OF A SINGLE STUDENT
                     #
-                    while len(exams_passed) < total_exams: # exit when all exams have been passed
-                        exams_to_try = generate_num_exams(av_exams=av_exams_per_sess,
-                                                          max_exams=max_exam_per_sess,
-                                                          exams_left= total_exams - len(exams_passed))
-                        tried,passed = take_exams(exams_to_try, succ_prob)
-                        session_passed +=1
-                        exam_tried += tried
-                        exams_passed += passed
-                        
-                    # store the result into np.arrays
-                    if grades is None and \
-                        lst_session_passed is None and \
-                        lst_exam_tried is None:
-                        grades = np.array(exams_passed)
-                        lst_session_passed = np.array(session_passed)
-                        lst_exam_tried = np.array(exam_tried)
-                    else:
-                        grades = np.vstack([grades, exams_passed])
-                        lst_session_passed = np.hstack([lst_session_passed, session_passed])
-                        lst_exam_tried = np.hstack([lst_exam_tried, exam_tried])
+                    results.append(
+                        simulate_student_carreer(total_exams, av_exams_per_sess, max_exam_per_sess, succ_prob)
+                    )
                 
                 #------------------------------------#
                 # CONFIDENCE LEVEL
                 #
-                interval,acc_grades = calculate_confidence_interval(grades, CONFIDENCE_LEVEL)
-                interval_2, acc_periods = calculate_confidence_interval(lst_session_passed, CONFIDENCE_LEVEL)
-                interval_3, acc_exams_tried = calculate_confidence_interval(lst_exam_tried, CONFIDENCE_LEVEL)
-                
+                interval, acc_grades = calculate_confidence_interval([result[0] for result in results], CONFIDENCE_LEVEL)
+                interval_2, acc_periods = calculate_confidence_interval([result[1] for result in results], CONFIDENCE_LEVEL)
+                interval_3, acc_exams_tried = calculate_confidence_interval([result[2] for result in results], CONFIDENCE_LEVEL)
+            
+            grades = [result[0] for result in results]
+            session_passed = [result[1] for result in results]
+            exam_tried = [result[2] for result in results]
+            
             # Store the input parameters with the results
             result = {
                 'Total exams': total_exams,
                 'Success probability': succ_prob,
                 'Max Exams per session': max_exam_per_sess,
                 'Average exam per session': av_exams_per_sess,
-                #'Variance exams per session': var_exams,
-                'Grade Mean': grades.mean(),
-                'Grade Std': grades.std(ddof=1),
+                'Grade Mean': np.mean(grades),
+                'Grade Std': np.std(grades, ddof=1),
                 'Grade Interval low': interval[0],
                 'Grade Interval up': interval[1],
                 'Accuracy Grade': acc_grades,
-                'Period mean': lst_session_passed.mean(),
-                'Period Std': lst_session_passed.std(ddof=1),
+                'Period mean': np.mean(session_passed),
+                'Period Std': np.std(session_passed, ddof=1),
                 'Period Interval low': interval_2[0],
                 'Period Interval up': interval_2[1],
                 'Accuracy Period': acc_periods,
-                'Tried Mean': lst_exam_tried.mean(),
-                'Tried Std': lst_exam_tried.std(ddof=1),
+                'Tried Mean': np.mean(exam_tried),
+                'Tried Std': np.std(exam_tried, ddof=1),
                 'Tried Interval low': interval_3[0],
                 'Tried Interval up': interval_3[1],
                 'Accuracy Tried': acc_exams_tried,
-                'Num Students': len(lst_session_passed)
+                'Num Students': len(results)
             }
             dfs.append(pd.DataFrame([result]))
-            lst_grades.append(grades.flatten())
-            #lst_periods.append(lst_session_passed)
-            #lst_tried.append(lst_exam_tried)
+            simulation_results.append(results)
+            
     
     df_result = pd.concat(dfs, ignore_index=True)
-    lst_grades = np.hstack(lst_grades)
-    #lst_periods = np.concatenate(lst_periods)
-    #lst_tried = np.concatenate(lst_tried)
-    save(df_result, lst_grades)
+    save_outputs(df_result, simulation_results)
