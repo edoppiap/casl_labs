@@ -86,8 +86,9 @@ def save_outputs(df, results):
                     honours += honour
                 
                 # Simulation to plot found
-                if honours and int(df.loc[i][1] > .4): 
-                    tot_exams, succ_prob, max_exams, av_exams = df.loc[i][:4]
+                if honours and int(df.loc[i][1] >= .6):
+                    n_simulation_to_plot = i
+                    tot_exams, succ_prob, _, av_exams = df.loc[n_simulation_to_plot][:4]
                     
                     plt.figure(figsize=(18,5))
                     
@@ -107,7 +108,6 @@ def save_outputs(df, results):
                     plt.close()
                     #plt.show()
                     
-                    n_simulation_to_plot = i
                     break
                 
         pbar.update(1)
@@ -143,16 +143,17 @@ def save_outputs(df, results):
         session_per_year = 6
         years = [n_session/session_per_year for _,n_session,_ in results[n_simulation_to_plot]]
 
-        width = (max(years) - min(years)) / len(set(years))
-        n,bins,_ = plt.hist(years, edgecolor='black', width=width)
+        width = (max(years) - min(years)) / 10
+        bins = np.linspace(min(years), max(years), num=10)
+        n,_,_ = plt.hist(years, bins=bins, edgecolor='black', width=width)
         plt.title('Histogram of years to graduate')
         plt.xlabel('years')
-        plt.xticks(bins)
+        plt.xticks(bins + width / 2)
         plt.ylabel('Frequency')
         plt.grid(True, linestyle='--', color='gray', alpha=0.6)
         plt.text(max(years) * 2/3, max(n)-10, f'Number of exams = {tot_exams:.0f}'+\
-                        f'\nSuccess Probability = {succ_prob*100:.0f}%\nAv. n. exams per session = {av_exams:.0f}', 
-                     bbox={'facecolor': 'lightgreen', 'pad': 10}, zorder=2)
+                    f'\nSuccess Probability = {succ_prob*100:.0f}%\nAv. n. exams per session = {av_exams:.0f}', 
+                    bbox={'facecolor': 'lightgreen', 'pad': 10}, zorder=2)
         file_name = os.path.join(folder_path, 'year_to_grad')
         plt.savefig(file_name, dpi=300, bbox_inches='tight')
         plt.close()
@@ -243,20 +244,11 @@ def generate_num_exams(av_exams, max_exams, exams_left):
     return np.minimum(np.random.poisson(av_exams), minimum_max)
 
 # -------------------------------------------------------------------------------------------------------#
-# BERNULLI EXPERIMENT
+# BERNOULLI EXPERIMENT
 #
 # rule the success/failure of an exam
 def take_exams(exam_to_try, succ_prob):
-    tried = 0
-    passed = []
-    
-    # the bernulli experiment is repeated n = exam_to_try times
-    for _ in range(exam_to_try):
-        tried += 1
-        if np.random.random() < succ_prob:
-            passed.append(calculate_grade())
-            
-    return tried, passed
+    return [calculate_grade() for _ in range(exam_to_try) if np.random.binomial(n=1, p=succ_prob)]
 
 # -------------------------------------------------------------------------------------------------------#
 # CONDIFENCE INTERVAL METHOD
@@ -302,16 +294,16 @@ def calculate_final_grade(grades):
 # SINGLE STUDENT CARREER
 #
 #
-def simulate_student_carreer(total_exams, av_exams, max_exams, succ_prob):
+def simulate_student_career(total_exams, av_exams, max_exams, succ_prob):
     exams_passed = []
     exam_tried, session_passed = 0,0
     while len(exams_passed) < total_exams: # exit when all exams have been passed
         exams_to_try = generate_num_exams(av_exams,
                                             max_exams,
                                             exams_left= total_exams - len(exams_passed))
-        tried,passed = take_exams(exams_to_try, succ_prob)
+        passed = take_exams(exams_to_try, succ_prob)
         session_passed += 1
-        exam_tried += tried
+        exam_tried += exams_to_try
         exams_passed += passed
         
     #final_grade, honours = calculate_final_grade(passed)
@@ -365,7 +357,7 @@ if __name__ == '__main__':
                     # CARRER OF A SINGLE STUDENT
                     #
                     results.append(
-                        simulate_student_carreer(total_exams, av_exams_per_sess, max_exam_per_sess, succ_prob)
+                        simulate_student_career(total_exams, av_exams_per_sess, max_exam_per_sess, succ_prob)
                     )
                 
                 #------------------------------------#
