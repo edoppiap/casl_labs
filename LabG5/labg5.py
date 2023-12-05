@@ -35,6 +35,8 @@ SIM_TIME = 100
 
 TOT_CFU = 132
 
+MAX_APPLIED = 35
+
 NUM_STUDENT = 300
 # setting the seed
 np.random.seed(42)
@@ -55,10 +57,66 @@ def read_csv_exams_files():
             tot = row['tot'],
             cfu = row['CFU'],
             optional = row['optional'],
+            max_stud = row['max_stud'] if not pd.isna(row['max_stud']) else None,
             grade_distr= [row[f'{i}'] for i in range(18,31)]
         )
         exams.append(exam)
     return exams
+
+def generate_accademic_plan(exams: list):
+    exam_dict = {}
+    mandatory, chosen = [], []
+    for exam in exams:
+        optional = exam.optional
+        if optional is not np.nan:
+            if optional not in exam_dict:
+                exam_dict[optional] = [exam]
+            else:
+                exam_dict[optional].append(exam)
+        else:
+            mandatory.append(exam)
+    for key, exam_table in exam_dict.items():
+        exam_table = [exam for exam in exam_table if exam.there_is_place()]
+        tots = np.array([exam.tot for exam in exam_table])
+        
+        # we select the exams based on the past data of the enrollment
+        if key != '5' and key != '6':
+            chosen_exam = random.choices(exam_table, (tots / sum(tots)))[0]
+            chosen_exam.studs += 1
+            chosen.append(chosen_exam)
+            
+        # this is the case for the free credits
+        elif key == '5':
+            table_5_choice = random.choices(exam_table)[0]
+            if table_5_choice.name == 'Free ECTS credits':
+                table_6 = list(exam_dict['6'])
+                internship = [el for el in table_6 if el.name == 'Internship'][0]
+                table_6.remove(internship)
+                
+                #----------------------------------------------------------------------------------------#
+                # RANDOM ELEMENT
+                #
+                # 40% of students chose the internship while the remain percentage pick the Free credits
+                choice = random.choices([internship, table_6], [.40, .60])
+                if isinstance(choice, Exam): # it is the intership
+                    choice.studs += 1
+                    chosen.append(choice)
+                    
+                elif isinstance(choice, list): # it is the free credits
+                    cfus = sum([exam.cfu for exam in mandatory])
+                    cfus += sum([exam.cfu for exam in chosen])
+                
+                    while cfus < TOT_CFU:
+                        tots = np.array([exam.tot for exam in table_6])
+                        free_credict_choice = random.choices(table_6, (tots / sum(tots)))[0]
+                        free_credict_choice.studs += 1
+                        cfus += free_credict_choice.cfu
+                        table_6.remove(free_credict_choice)
+                        chosen.append(free_credict_choice)
+            else:
+                table_5_choice.studs += 1
+                chosen.append(table_5_choice)
+    return mandatory + chosen
 
 # -------------------------------------------------------------------------------------------------------#
 # RANDOM ELEMENT
@@ -99,9 +157,9 @@ def calculate_confidence_interval(data, conf):
 #
 #
 class Student:
-    def __init__(self, all_exams):
+    def __init__(self, all_exams=None):
         # OOP variables
-        self.exams_to_take = self.generate_accademic_plan(exams=all_exams)
+        self.exams_to_take = generate_accademic_plan(all_exams)
         self.exams_taken = []
         self.current_year = 1 # this is because student with same enroll_year and same exams will follow the same courses
         self.current_semester = 1 # each year has 3 semester (Sep-Feb, Mar-Jul, Jul-Sept)
@@ -114,49 +172,6 @@ class Student:
         # final_grade
         self.final_grade = None
         self.honours = None
-        
-    def generate_accademic_plan(exams: list):
-        exam_dict = {}
-        mandatory, chosen = [], []
-        for exam in exams:
-            optional = exam.optional
-            if optional is not np.nan:
-                if optional not in exam_dict:
-                    exam_dict[optional] = [exam]
-                else:
-                    exam_dict[optional].append(exam)
-            else:
-                mandatory.append(exam)
-        for key, exam_table in exam_dict.items():
-            tots = np.array([exam.tot for exam in exam_table])
-            
-            # we select the exams based on the past data of the enrollment
-            if key != '5' and key != '6':
-                chosen.append(random.choices(exam_table, (tots / sum(tots)))[0])
-                
-            # this is the case for the free credits
-            elif key == '5': 
-                table_5_choice = random.choices(exam_table)[0]
-                if table_5_choice.name == 'Free ECTS credits':
-                    table_6 = list(exam_dict['6'])
-                    internship = [el for el in table_6 if el.name == 'Internship'][0]
-                    table_6.remove(internship)
-                    
-                    choice = random.choices([internship, table_6], [.40, .60])
-                    if isinstance(choice, Exam): # it is the intership
-                        chosen.append(choice)
-                        
-                    elif isinstance(choice, list): # it is the free credits
-                        cfus = sum([exam.cfu for exam in mandatory])
-                        cfus += sum([exam.cfu for exam in chosen])
-                    
-                        while cfus < TOT_CFU:
-                            tots = np.array([exam.tot for exam in table_6])
-                            free_credict_choice = random.choices(table_6, (tots / sum(tots)))[0]
-                            cfus += free_credict_choice.cfu
-                            table_6.remove(free_credict_choice)
-                            chosen.append(free_credict_choice)
-        return mandatory + chosen
         
     # -------------------------------------------------------------------------------------------------------#
     # RANDOM ELEMENT
@@ -225,7 +240,7 @@ class Student:
 #        
 class Exam:
     def __init__(self, name, year: int, semester: int, cfu: int, passed: int, tot: int, 
-                 grade_distr: np.array, group_influence: float = None, optional=None):
+                 grade_distr: np.array, max_stud: int = None, group_influence: float = None, optional=None):
         self.name = name
         self.year = year
         self.semester = semester
@@ -233,10 +248,12 @@ class Exam:
         self.optional = optional
         self.passed = passed
         self.tot = tot
+        self.max_stud = max_stud
         self.group_influence = group_influence
         
         self.succ_prob = passed / tot
         self.grade_probs = [grade / sum(grade_distr) for grade in grade_distr]
+        self.studs = 0
         
     def attempt(self):
         # --------------------------------------------------------------------------------------------------#
@@ -250,6 +267,11 @@ class Exam:
             # Generation of a random grades based on the input grade distribution
             return (np.random.choice(np.arange(18,31), p=self.grade_probs), self.cfu)
         return None
+    
+    def there_is_place(self):
+        if self.max_stud is None:
+            return True
+        return self.max_stud > self.studs
         
        
 #------------------------------------------------------------------------------------------------------#
@@ -270,10 +292,18 @@ if __name__ == '__main__':
     
     exams = read_csv_exams_files()
     
-    students = [Student(all_exams=exams) for _ in range(NUM_STUDENT)]
-            
-    for student in students:
-        print([exam.name for exam in student.exams_to_take])
+    applied = False
+    i = 0
+    c = 0
+    while not applied and i < 200:
+        student = Student(all_exams=exams)    
+        if 'Applied data science project' in [exam.name for exam in student.exams_to_take]:
+            c += 1
+        i+=1
+    if c:
+        print(f'Number of students that choose Applied: {c} ({c/i * 100:.2f}%)')
+    else:
+        print('Not a single Applied student')
     
     # combination of the input parameters
     param_comb = list(itertools.product(*PARAMS_GRID.values()))
@@ -347,4 +377,4 @@ if __name__ == '__main__':
             simulation_results.append(results)"""
             
     
-    df_result = pd.concat(dfs, ignore_index=True)
+    #df_result = pd.concat(dfs, ignore_index=True)
