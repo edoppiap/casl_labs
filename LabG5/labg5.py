@@ -20,7 +20,6 @@ import matplotlib.pyplot as plt
 #
 PARAMS_GRID = {
     'total_exams' : [12,15,20], # the total number of exams for the graduation
-    'succ_prob' : [.2, .4, .6, .8], # the probability that a student success at an exam
     'max_exam_per_sess' : [1,2], # the number of exams that a student can try each session
     'av_exam_per_sess' : [2,1] # the number of exams taken in average from each student
     #'var_exam_per_sess' : [0,2] # the variance in the number of exam taken from different student
@@ -35,7 +34,7 @@ SIM_TIME = 100
 
 TOT_CFU = 132
 
-MAX_APPLIED = 35
+STUDENT_PER_YEAR = 300
 
 NUM_STUDENT = 300
 # setting the seed
@@ -63,6 +62,24 @@ def read_csv_exams_files():
         exams.append(exam)
     return exams
 
+def plot_graphs(students):
+    
+    graduations = [student.final_grade for student in students]
+    
+    plt.figure(figsize=(18,5))
+                    
+    bins = (np.arange(66,112)-.4)
+    n, bins, _ = plt.hist(graduations, bins=bins, edgecolor='black', width=0.8)
+    plt.title(f'Histogram of final grades')
+    plt.xlabel('Grades')
+    plt.ylabel('Frequency')
+    plt.yticks(np.arange(1,max(n),4))
+    plt.xticks(np.arange(66,111))
+    plt.grid(which='major', axis='y', linestyle='--', color='gray', alpha=0.6)
+    plt.show()
+# -------------------------------------------------------------------------------------------------------#
+#
+# Read the input file for the exams
 def generate_accademic_plan(exams: list):
     exam_dict = {}
     mandatory, chosen = [], []
@@ -74,12 +91,16 @@ def generate_accademic_plan(exams: list):
             else:
                 exam_dict[optional].append(exam)
         else:
+            exam.studs += 1
             mandatory.append(exam)
     for key, exam_table in exam_dict.items():
-        exam_table = [exam for exam in exam_table if exam.there_is_place()]
+        exam_table = [exam for exam in exam_table if exam.has_available_space()]
         tots = np.array([exam.tot for exam in exam_table])
         
-        # we select the exams based on the past data of the enrollment
+        #----------------------------------------------------------------------------------------#
+        # RANDOM ELEMENT
+        #
+        # Select the exams based on the past data of the enrollment
         if key != '5' and key != '6':
             chosen_exam = random.choices(exam_table, (tots / sum(tots)))[0]
             chosen_exam.studs += 1
@@ -161,8 +182,8 @@ class Student:
         # OOP variables
         self.exams_to_take = generate_accademic_plan(all_exams)
         self.exams_taken = []
-        self.current_year = 1 # this is because student with same enroll_year and same exams will follow the same courses
-        self.current_semester = 1 # each year has 3 semester (Sep-Feb, Mar-Jul, Jul-Sept)
+        #self.current_year = 1 # this is because student with same enroll_year and same exams will follow the same courses
+        #self.current_semester = 1 # each year has 3 semester (Sep-Feb, Mar-Jul, Jul-Sept)
         
         # characteristic variable
         #self.sport = sport
@@ -189,13 +210,13 @@ class Student:
     # 
     # Select the exams with more probability with the one with more than one call
     #
-    def select_tryable_exams(self, max_exams):
-        tryable_exams = [exam for exam in self.exams_to_take  if exam.year <= self.current_year and exam.semester <= self.current_semester]
-        tryable_exams = [(exam, 2) if exam.semester == self.current_semester else (exam, 1) for exam in tryable_exams ]
+    def select_tryable_exams(self, num_exams, current_year, current_semester):
+        tryable_exams = [exam for exam in self.exams_to_take  if exam.year <= current_year and exam.semester <= current_semester]
+        tryable_exams = [(exam, 2) if exam.semester == current_semester else (exam, 1) for exam in tryable_exams]
         
         selected = []
 
-        while max_exams > 0 and tryable_exams:
+        while num_exams > 0 and tryable_exams:
             exams, attempts = zip(*tryable_exams)
             # the weights for the choices are higher if a session has more than one call for that exam
             weights = [attempt / sum(attempts) for attempt in attempts]
@@ -204,19 +225,17 @@ class Student:
             index = exams.index(chosen)
             
             if attempts[index] > 0:
-                if attempts[index] == 2 and max_exams >= 2:
+                if attempts[index] == 2 and num_exams >= 2:
                     selected.append((chosen, attempts[index]))
-                    max_exams -= attempts[index]
+                    num_exams -= attempts[index]
                 else:
                     selected.append((chosen, 1))
-                    max_exams -= 1
+                    num_exams -= 1
             tryable_exams = [pair for pair in tryable_exams if not pair[0] == chosen]
         return selected
-        
-    def next_semester(self):
-        self.current_year += (self.current_semester == 3)
-        self.current_semester = (self.current_semester % 3) + 1
-        
+    
+    def can_graduate(self):
+        return len(self.exams_to_take) == 0        
     
     # -------------------------------------------------------------------------------------------------------#
     # CALCULATE FINAL GRADE
@@ -260,18 +279,20 @@ class Exam:
         # BERNOULLI EXPERIMENT
         #
         # rule the success/failure of an exam
-        if np.random.binomial(n=1, p=self.succ_prob):
+        succ_prob = self.succ_prob if not np.isnan(self.succ_prob) else 1
+        if np.random.binomial(n=1, p=succ_prob):
             # ----------------------------------------------------------------------------------------------#
             # GRADE RANDOM GENERATION
             #      
             # Generation of a random grades based on the input grade distribution
-            return (np.random.choice(np.arange(18,31), p=self.grade_probs), self.cfu)
+            if not all(np.isnan(el) for el in self.grade_probs):
+                return (np.random.choice(np.arange(18,31), p=self.grade_probs), self.cfu)
+            else:
+                return (None, self.cfu)                
         return None
     
-    def there_is_place(self):
-        if self.max_stud is None:
-            return True
-        return self.max_stud > self.studs
+    def has_available_space(self):
+        return self.max_stud is None or self.max_stud > self.studs
         
        
 #------------------------------------------------------------------------------------------------------#
@@ -282,7 +303,55 @@ class Exam:
 class Session:
     def __init__(self, year: int, semester: int):
         self.year = year
-        self.semester = semester
+        self.semester = semester        
+    
+    def next_semester(self):
+        self.year += (self.semester == 3)
+        self.semester = (self.semester % 3) + 1
+        
+    def __lt__(self, other):
+        if self.year == other.year:
+            return self.semester < other.semester
+        else:
+            return self.year < other.year
+        
+    def __eq__(self, other: object) -> bool:
+        return (self.year, self.semester) == (other.year, other.semester)
+        
+def simulate(students: list[Student]):
+    
+    max_session = Session(5,3)
+    
+    session = Session(1,1)
+    graduaded = []
+    
+    # Event Loop
+    while len(students) > 0 and session < max_session:       
+        
+        for student in students:
+            n_exam = student.generate_num_exams(3, 4)
+            exams_to_try = student.select_tryable_exams(n_exam, session.year, session.semester)
+            
+            for exam,n_attempts in exams_to_try:
+                attempt = None
+                while n_attempts > 0 and attempt is None:
+                    attempt = exam.attempt()
+                    if attempt:
+                        grade,_ = attempt
+                        # don't add the internship or the challenge to the average calculation
+                        if grade is not None: 
+                            student.exams_to_take.remove(exam)
+                            student.exams_taken.append(attempt)
+                    
+
+            if student.can_graduate():
+                students.remove(student)
+                student.calculate_final_grade()
+                graduaded.append(student)
+        
+        session.next_semester()
+        
+    return graduaded
         
 # -------------------------------------------------------------------------------------------------------#
 # MAIN FUNCTION
@@ -292,19 +361,13 @@ if __name__ == '__main__':
     
     exams = read_csv_exams_files()
     
-    applied = False
-    i = 0
-    c = 0
-    while not applied and i < 200:
-        student = Student(all_exams=exams)    
-        if 'Applied data science project' in [exam.name for exam in student.exams_to_take]:
-            c += 1
-        i+=1
-    if c:
-        print(f'Number of students that choose Applied: {c} ({c/i * 100:.2f}%)')
-    else:
-        print('Not a single Applied student')
+    students = [Student(all_exams=exams) for _ in range(STUDENT_PER_YEAR)]
     
+    graduaded = simulate(students)
+
+    plot_graphs(graduaded)
+    
+    """
     # combination of the input parameters
     param_comb = list(itertools.product(*PARAMS_GRID.values()))
     
@@ -317,7 +380,7 @@ if __name__ == '__main__':
     #lst_grades,lst_periods, lst_tried = [],[],[]
         
     # foor loop for each combination of parameters
-    for total_exams, succ_prob, max_exam_per_sess, av_exams_per_sess in \
+    for total_exams, max_exam_per_sess, av_exams_per_sess in \
         tqdm(param_comb, desc='Simulating all combinations of input parameters', 
              bar_format=bar_format):
             
@@ -328,16 +391,16 @@ if __name__ == '__main__':
             # INITIALIZZATION
             acc_grades, acc_periods, acc_exams_tried = 0,0,0
             results = []
-            """
+            
             #------------------------------------#
             # LOOP UNTIL AN ACCETTABLE ACCURACY HAS REACHED
             # 
-            # Continue to add students until the accuracies have reached the level of acceptance
+            # Continue to simulates a whole course until the accuracies have reached the level of acceptance
             while acc_grades < ACC_ACCEPTANCE or \
                 acc_periods < ACC_ACCEPTANCE or \
                 acc_exams_tried < ACC_ACCEPTANCE:
                     
-                
+                students = [Student(all_exams=exams) for _ in range(STUDENT_PER_YEAR)]
                 
                 #------------------------------------#
                 # CONFIDENCE LEVEL
@@ -353,7 +416,6 @@ if __name__ == '__main__':
             # Store the input parameters with the results
             result = {
                 'Total exams': total_exams,
-                'Success probability': succ_prob,
                 'Max Exams per session': max_exam_per_sess,
                 'Average exam per session': av_exams_per_sess,
                 'Grade Mean': np.mean(grades),
@@ -374,7 +436,7 @@ if __name__ == '__main__':
                 'Num Students': len(results)
             }
             dfs.append(pd.DataFrame([result]))
-            simulation_results.append(results)"""
+            simulation_results.append(results)
             
     
-    #df_result = pd.concat(dfs, ignore_index=True)
+    df_result = pd.concat(dfs, ignore_index=True)"""
