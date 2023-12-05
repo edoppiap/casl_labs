@@ -2,8 +2,6 @@
 # IMPORTS
 #
 #
-import itertools
-from queue import PriorityQueue
 import numpy as np
 from tqdm import tqdm
 from scipy.stats import t
@@ -11,8 +9,9 @@ import pandas as pd
 import random
 import os
 from datetime import datetime
-import pickle
 import matplotlib.pyplot as plt
+from scipy.stats import logistic
+import copy
 
 # -------------------------------------------------------------------------------------------------------#
 # INPUT PARAMETERS
@@ -77,6 +76,47 @@ def plot_graphs(students):
     plt.xticks(np.arange(66,111))
     plt.grid(which='major', axis='y', linestyle='--', color='gray', alpha=0.6)
     plt.show()
+    
+    sessions = [student.grade_session for student in students]
+    # Create labels for the x-axis (combination of year and semester)
+    labels = [f"{session.year}-{session.semester}" for session in sessions]
+    
+    print(labels)
+
+    # Get unique labels and their counts
+    unique_labels, label_counts = np.unique(labels, return_counts=True)
+
+    # Plot the histogram using plt.bar
+    plt.title('Histogram of years and semesters to graduate')
+    plt.bar(unique_labels, label_counts, edgecolor='black', align='center')
+    plt.xlabel('Years and Semesters')
+    plt.ylabel('Frequency')
+    plt.xticks(ha='right')
+
+    plt.grid(True, linestyle='--', color='gray', alpha=0.6)
+    plt.show()
+    
+    intership_studs = [student.final_grade for student in students if student.intership_n_sessions is not None]
+    other_studs = [student.final_grade for student in students if student.intership_n_sessions is None]
+    
+    print(graduations)
+    print(intership_studs)
+    print(other_studs)
+    
+    plt.figure(figsize=(12,6))
+    plt.title('Histogram of final grades')
+    bins = (np.arange(66,112)-.4)
+    plt.hist(graduations, bins=bins, edgecolor='black', alpha=.5, width=0.8, label=f'All students')
+    plt.hist(intership_studs, bins=bins, edgecolor='black', alpha=.5, width=0.8, label=f'Internship students')
+    plt.hist(other_studs, bins=bins, edgecolor='black', alpha=.5, width=0.8, label=f'Non-internship students')
+    plt.xlabel('Grades')
+    plt.ylabel('Frequency')
+    #plt.yticks(np.arange(1,max(n),4))
+    plt.xticks(np.arange(66,111))
+    plt.grid(which='major', axis='y', linestyle='--', color='gray', alpha=0.6)
+    plt.legend()
+    plt.show()
+    
 # -------------------------------------------------------------------------------------------------------#
 #
 # Read the input file for the exams
@@ -173,87 +213,6 @@ def calculate_confidence_interval(data, conf):
     return interval,acc
 
 # -------------------------------------------------------------------------------------------------------#
-# STUDENT CLASS
-# 
-#
-#
-class Student:
-    def __init__(self, all_exams=None):
-        # OOP variables
-        self.exams_to_take = generate_accademic_plan(all_exams)
-        self.exams_taken = []
-        #self.current_year = 1 # this is because student with same enroll_year and same exams will follow the same courses
-        #self.current_semester = 1 # each year has 3 semester (Sep-Feb, Mar-Jul, Jul-Sept)
-        
-        # characteristic variable
-        #self.sport = sport
-        #self.isee = isee
-        #self.tendency_to_study = tendency_to_study
-        
-        # final_grade
-        self.final_grade = None
-        self.honours = None
-        
-    # -------------------------------------------------------------------------------------------------------#
-    # RANDOM ELEMENT
-    # 
-    # for the number of exams that each student try:
-    # this generate a single random number from the average 
-    # not greater than the max exams possible and the num exams left
-    # in this way each student can try a different num of exams 
-    def generate_num_exams(self, av_exams, max_exams):
-        exams_left = len(self.exams_to_take)
-        return min([np.random.poisson(av_exams), max_exams, exams_left])
-    
-    # -------------------------------------------------------------------------------------------------------#
-    # RANDOM ELEMENT
-    # 
-    # Select the exams with more probability with the one with more than one call
-    #
-    def select_tryable_exams(self, num_exams, current_year, current_semester):
-        tryable_exams = [exam for exam in self.exams_to_take  if exam.year <= current_year and exam.semester <= current_semester]
-        tryable_exams = [(exam, 2) if exam.semester == current_semester else (exam, 1) for exam in tryable_exams]
-        
-        selected = []
-
-        while num_exams > 0 and tryable_exams:
-            exams, attempts = zip(*tryable_exams)
-            # the weights for the choices are higher if a session has more than one call for that exam
-            weights = [attempt / sum(attempts) for attempt in attempts]
-            
-            chosen = random.choices(exams, weights=weights)[0]
-            index = exams.index(chosen)
-            
-            if attempts[index] > 0:
-                if attempts[index] == 2 and num_exams >= 2:
-                    selected.append((chosen, attempts[index]))
-                    num_exams -= attempts[index]
-                else:
-                    selected.append((chosen, 1))
-                    num_exams -= 1
-            tryable_exams = [pair for pair in tryable_exams if not pair[0] == chosen]
-        return selected
-    
-    def can_graduate(self):
-        return len(self.exams_to_take) == 0        
-    
-    # -------------------------------------------------------------------------------------------------------#
-    # CALCULATE FINAL GRADE
-    #
-    #
-    def calculate_final_grade(self):
-        final_points = sum([grade*cfu for grade,cfu in self.exams_taken]) / sum([cfu for _,cfu in self.exams_taken]) * 110/30
-        thesis = np.random.uniform(0,4,size=1)
-        presentation = np.random.uniform(0,2,size=1)
-        bonus = np.random.uniform(0,2,size=1)
-        
-        final_grade = final_points + thesis + presentation + bonus
-        
-        self.honours = final_grade[0] > 112.5
-        
-        self.final_grade = round(np.minimum(110, final_grade[0]))
-
-# -------------------------------------------------------------------------------------------------------#
 # EXAM CLASS
 #
 #        
@@ -317,39 +276,182 @@ class Session:
         
     def __eq__(self, other: object) -> bool:
         return (self.year, self.semester) == (other.year, other.semester)
+    
+    def more_than(self, n: int, other: object):
+        year_difference = abs(self.year - other.year)
+        semester_difference = abs(self.semester - other.semester)
+
+        total_semesters_apart = year_difference * 3 + semester_difference
+
+        return total_semesters_apart >= n
+
+# -------------------------------------------------------------------------------------------------------#
+# STUDENT CLASS
+# 
+#
+#
+class Student:
+    def __init__(self, all_exams=None):
+        # OOP variables
+        self.exams_to_take = []
+        self.exams_taken = []
+        self.intership_n_sessions = None
+        self.challenge_n_session = None
+        self.session_start_activity = None
+        
+        self.generate_accademic_plan(all_exams)
+        
+        # characteristic variable
+        #self.sport = sport
+        #self.isee = isee
+        #self.tendency_to_study = tendency_to_study
+        
+        # final_grade
+        self.final_grade = None
+        self.honours = None
+        self.grade_session = None
+        
+    def generate_accademic_plan(self, all_exams):
+        exams = generate_accademic_plan(all_exams)
+        names = [exam.name for exam in exams]
+        
+        if 'Internship' in names:
+            exams = [exam for exam in exams if exam.name != 'Internship']
+            self.intership_n_sessions = np.random.randint(1,4) # not inclusive
+        elif 'Challenge' in names:
+            exams = [exam for exam in exams if exam.name != 'Challenge']
+            self.challenge_n_session = 1
+        
+        self.exams_to_take = exams
+    
+    # -------------------------------------------------------------------------------------------------------#
+    # RANDOM ELEMENT
+    #
+    # This is a function that start the internship or the challenge based on the number of exam that the student
+    # has, (the more exam, the less is probable that the students starts one of them)
+    def start_internship_or_challenge(self, session: Session):
+        # LOGISTIC DISTRIBUTION to calculate the probability to start the intership 
+        # based on the number of exam left 
+        n_exam_left = len(self.exams_to_take)
+        if n_exam_left == 0:
+            # add this to be shure it starts
+            prob = 1
+        else:
+            prob = 1 - logistic.cdf(len(self.exams_to_take), loc=2.5, scale=.5)
+            
+        # BERNULLI OUTCOME for starting the internship (or the challenge)
+        outcome =  np.random.binomial(n=1, p=prob)
+        if outcome:
+            self.session_start_activity = copy.copy(session)
+
+        
+    # -------------------------------------------------------------------------------------------------------#
+    # RANDOM ELEMENT
+    # 
+    # for the number of exams that each student try:
+    # this generate a single random number from the average 
+    # not greater than the max exams possible and the num exams left
+    # in this way each student can try a different num of exams 
+    def generate_num_exams(self, av_exams, max_exams):
+        exams_left = len(self.exams_to_take)
+        return min([np.random.poisson(av_exams), max_exams, exams_left])
+    
+    # -------------------------------------------------------------------------------------------------------#
+    # RANDOM ELEMENT
+    # 
+    # Select the exams with more probability with the one with more than one call
+    #
+    def select_tryable_exams(self, num_exams, current_year, current_semester):
+        tryable_exams = [exam for exam in self.exams_to_take  if exam.year <= current_year and exam.semester <= current_semester]
+        tryable_exams = [(exam, 2) if exam.semester == current_semester else (exam, 1) for exam in tryable_exams]
+        
+        selected = []
+
+        while num_exams > 0 and tryable_exams:
+            exams, attempts = zip(*tryable_exams)
+            # the weights for the choices are higher if a session has more than one call for that exam
+            weights = [attempt / sum(attempts) for attempt in attempts]
+            
+            chosen = random.choices(exams, weights=weights)[0]
+            index = exams.index(chosen)
+            
+            if attempts[index] > 0:
+                if attempts[index] == 2 and num_exams >= 2:
+                    selected.append((chosen, attempts[index]))
+                    num_exams -= attempts[index]
+                else:
+                    selected.append((chosen, 1))
+                    num_exams -= 1
+            tryable_exams = [pair for pair in tryable_exams if not pair[0] == chosen]
+        return selected
+    
+    def already_graduated(self):
+        return self.final_grade != None
+    
+    def can_graduate(self, current: Session):
+        if self.session_start_activity is not None:
+            pass
+        if not self.challenge_n_session and \
+            not self.intership_n_sessions and \
+            not self.session_start_activity:
+            return len(self.exams_to_take) == 0
+        elif self.intership_n_sessions:
+            temp_1 = self.session_start_activity is not None and self.session_start_activity.more_than(self.intership_n_sessions, current)
+            return len(self.exams_to_take) == 0 and temp_1
+        else:
+            temp_1 = self.session_start_activity is not None and self.session_start_activity.more_than(1, current)
+            return len(self.exams_to_take) == 0 and temp_1
+                
+    
+    # -------------------------------------------------------------------------------------------------------#
+    # CALCULATE FINAL GRADE
+    #
+    #
+    def calculate_final_grade(self, session: Session):
+        final_points = sum([grade*cfu for grade,cfu in self.exams_taken]) / sum([cfu for _,cfu in self.exams_taken]) * 110/30
+        thesis = np.random.uniform(0,4,size=1)
+        presentation = np.random.uniform(0,2,size=1)
+        bonus = np.random.uniform(0,2,size=1)
+        
+        final_grade = final_points + thesis + presentation + bonus
+        
+        self.honours = final_grade[0] > 112.5        
+        self.final_grade = round(np.minimum(110, final_grade[0]))
+        self.grade_session = session
         
 def simulate(students: list[Student]):
     
-    max_session = Session(5,3)
+    max_session = Session(10,1)
     
-    session = Session(1,1)
+    current_session = Session(1,1)
     graduaded = []
     
     # Event Loop
-    while len(students) > 0 and session < max_session:       
+    while len(students) > 0 and current_session < max_session:       
         
         for student in students:
             n_exam = student.generate_num_exams(3, 4)
-            exams_to_try = student.select_tryable_exams(n_exam, session.year, session.semester)
+            exams_to_try = student.select_tryable_exams(n_exam, current_session.year, current_session.semester)
+            if not student.challenge_n_session and not student.intership_n_sessions:
+                student.start_internship_or_challenge(current_session) # Random Element
             
             for exam,n_attempts in exams_to_try:
                 attempt = None
                 while n_attempts > 0 and attempt is None:
                     attempt = exam.attempt()
                     if attempt:
-                        grade,_ = attempt
-                        # don't add the internship or the challenge to the average calculation
-                        if grade is not None: 
-                            student.exams_to_take.remove(exam)
-                            student.exams_taken.append(attempt)
-                    
+                        student.exams_to_take.remove(exam)
+                        student.exams_taken.append(attempt)
+            
+            if student.already_graduated():
+                print('Già laureato')
 
-            if student.can_graduate():
+            if not student.already_graduated() and student.can_graduate(current_session):
                 students.remove(student)
-                student.calculate_final_grade()
+                student.calculate_final_grade(copy.copy(current_session))
                 graduaded.append(student)
         
-        session.next_semester()
+        current_session.next_semester()
         
     return graduaded
         
