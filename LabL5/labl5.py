@@ -26,15 +26,17 @@ from tqdm import tqdm
 
 P_THRESHOLD = .01
 
-def generate_graph_ER(n, p):
-    g = {node: {'state':0, 'neighbors': []} for node in range(n)}
+SIM_TIME = 200_000
+
+def generate_graph_ER(n, p, choices: list):
+    g = {node: {'state': random.choice(choices), 'neighbors': []} for node in range(n)}
     
     if p < P_THRESHOLD:
         m = int((p*n*(n-1)) // 2) # expected number of edge
         
         for _ in tqdm(range(m), desc='Generating with ER with p little'): # O(m) -> O(n)
             while True:
-                i,j = tuple(random.randint(0, len(g.items())-1) for _ in range(2)) # pick two random nodes
+                i,j = tuple(random.randint(0, len(g)-1) for _ in range(2)) # pick two random nodes
                 if j in g[i]['neighbors']:
                     continue # don't add the edge if already exists
                 else:
@@ -50,7 +52,43 @@ def generate_graph_ER(n, p):
     
     return g
 
-g = generate_graph_ER(10_000, .00999)
-g = generate_graph_ER(10_000, .01)
+def simulate(g):
+    FES = PriorityQueue()
+    
+    random_index = random.randint(0, len(g)-1)
+    time = 0
+    
+    FES.put((time, random_index))
+    
+    pbar = tqdm(total=SIM_TIME,
+                    desc=f'Simulating sim_time = {SIM_TIME}',
+                    bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}]')
+    
+    while time < SIM_TIME:
+        if FES.empty():
+            break
+        
+        new_time, current_i = FES.get()
+        
+        if new_time <= SIM_TIME: # to prevent a warning to appear
+            pbar.update(new_time - time)
+        else:
+            pbar.update(SIM_TIME - time)
+                
+        time = new_time
+        neighbors = g[current_i]['neighbors']
+        if neighbors:
+            random_neighbor = random.choice(g[current_i]['neighbors'])
+        
+            g[current_i]['state'] = g[random_neighbor]['state']
+        
+        FES.put((time + random.expovariate(1), random.randint(0, len(g)-1)))
 
-g = generate_graph_ER(100_000, 10**(-4))
+# -------------------------------------------------------------------------------------------------------#
+# VOTER MODEL
+#
+#
+choices = [-1,1]
+g = generate_graph_ER(100_000, 10**(-4), choices)
+
+simulate(g)
