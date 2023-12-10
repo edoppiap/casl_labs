@@ -23,10 +23,11 @@ from queue import PriorityQueue
 import random
 import numpy as np
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 P_THRESHOLD = .01
 
-SIM_TIME = 200_000
+SIM_TIME = 1_000_000
 
 def generate_graph_ER(n, p, choices: list):
     g = {node: {'state': random.choice(choices), 'neighbors': []} for node in range(n)}
@@ -36,7 +37,7 @@ def generate_graph_ER(n, p, choices: list):
         
         for _ in tqdm(range(m), desc='Generating with ER with p little'): # O(m) -> O(n)
             while True:
-                i,j = tuple(random.randint(0, len(g)-1) for _ in range(2)) # pick two random nodes
+                i,j = random.sample(g.keys(), 2) # pick two random nodes
                 if j in g[i]['neighbors']:
                     continue # don't add the edge if already exists
                 else:
@@ -55,6 +56,9 @@ def generate_graph_ER(n, p, choices: list):
 def simulate(g):
     FES = PriorityQueue()
     
+    time_batch = SIM_TIME / 1_000
+    next_batch = time_batch
+    
     random_index = random.randint(0, len(g)-1)
     time = 0
     
@@ -63,6 +67,8 @@ def simulate(g):
     pbar = tqdm(total=SIM_TIME,
                     desc=f'Simulating sim_time = {SIM_TIME}',
                     bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}]')
+    
+    data = []
     
     while time < SIM_TIME:
         if FES.empty():
@@ -81,14 +87,32 @@ def simulate(g):
             random_neighbor = random.choice(g[current_i]['neighbors'])
         
             g[current_i]['state'] = g[random_neighbor]['state']
+            
+        if time > next_batch:
+            next_batch += time_batch
+            data.append((time,len([1 for node in g.keys() if g[node]['state'] == 1]),len([-1 for node in g.keys() if g[node]['state'] == -1])))
         
         FES.put((time + random.expovariate(1), random.randint(0, len(g)-1)))
+        
+    times = [time for time,_,_ in data]
+    plus = [plus for _,plus,_ in data]
+    minus = [minus for _,_,minus in data]
+    plt.figure(figsize=(12,8))
+    plt.plot(times, plus, label='+1')
+    plt.plot(times,minus, label='-1')
+    plt.xlabel('Time (time unit)')
+    plt.ylabel('State variable occurrences')
+    plt.title(f'State variable occurrences over time')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 # -------------------------------------------------------------------------------------------------------#
 # VOTER MODEL
 #
 #
 choices = [-1,1]
-g = generate_graph_ER(100_000, 10**(-4), choices)
+#g = generate_graph_ER(100_000, 10**(-4), choices)
+g = generate_graph_ER(1_000, .5, choices)
 
 simulate(g)
