@@ -24,10 +24,15 @@ import random
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-from scipy.special import factorial
 import scipy.stats as stats
 
-P_THRESHOLD = .01
+input_parameters = {
+    'num_nodes' : [100_000, 1_000],
+    'gen_probs' : [10**(-4), .1],
+    'bias_probs' : [.5, .7, .9]
+}
+
+P_THRESHOLD = 8
 
 SIM_TIME = 1_000_000
 
@@ -37,38 +42,52 @@ np.random.seed(42)
 def degree_of(node):
     return len(node['neighbors'])
 
-def chi_squared_test(g, p):
+def qq_plot(g,p):
     n = len(g)
     lam = (n-1)*p
     degrees = np.array([degree_of(g[node]) for node in g])
     
+    probplot_data = stats.probplot(degrees, dist=stats.poisson(lam), plot=plt)
+    
+    plt.title('Q-Q Plot for Poisson Distribution')
+    plt.xlabel('Theoretical Quantiles')
+    plt.ylabel('Sample Quantiles')
+    plt.grid(True)
+    plt.show()
+
+def chi_squared_test(g, p):
+    n = len(g)
+    lam = (n-1)*p
+    degrees = np.array([degree_of(g[node]) for node in g])
+    #lam = degrees.mean()
+    
     x = np.unique(degrees)
     observed, _ = np.histogram(degrees, bins=x, density=True)
+    df = len(x) -1
     x = x[:-1]
     expected = stats.poisson.pmf(x, lam)
+    
+    #expected = stats.binom.pmf(x, n, p)
+    
+    chi2_stat = np.sum((observed - expected)**2 / expected)
+    p_value = 1 - stats.chi2.pdf(chi2_stat, df)
+    #chi_2, p_value = stats.chisquare(f_obs=observed, f_exp=expected, ddof=df)
+    print(f'p_value = {p_value}')
     
     plt.figure(figsize=(12,8))
     plt.title('Observed and expected frequencies')
     plt.hist(degrees, bins=np.unique(degrees), alpha=.5, label='Observed', density=True)
-    #plt.hist(expected, bins=x, alpha=.5, label='Expected')
-    plt.plot(x,expected, label='Expected (Poisson)')
+    #plt.hist(expected, bins=x, alpha=.5, label='Expected', density=True)
+    plt.plot(x, expected, color='r', label='Expected pdf (Poisson)')
     plt.legend()
     plt.show()
-    
-    #expected = stats.binom.pmf(x, n, p)
-    
-    observed /= np.sum(observed)
-    expected /= np.sum(expected)
-    
-    chi_2, p_value = stats.chisquare(f_obs=observed, f_exp=expected)
-    print(f'p_value = {p_value}')
 
-def generate_graph_ER(n, p, choices: list):
-    g = {node: {'state': np.random.choice(choices, p=[.9, .1]), 'neighbors': []} for node in range(n)}
+def generate_graph_ER(n, p, choices: list, prob):
+    g = {node: {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []} for node in range(n)}
     
     bar_format='{l_bar}{bar:30}{n:.0f}/{total} nodes [{elapsed}<{remaining}, {rate_fmt}]'
     
-    if p < P_THRESHOLD:
+    if abs(int(np.log10(p)) - int(np.log10(n))) >= P_THRESHOLD:
         m = int((p*n*(n-1)) // 2) # expected number of edges
         
         for _ in tqdm(range(m), desc='Generating with ER with p little', # O(m) -> O(n)
@@ -94,7 +113,7 @@ def generate_graph_ER(n, p, choices: list):
 def simulate(g):
     FES = PriorityQueue()
     
-    time_batch = 100_000
+    time_batch = SIM_TIME * 10**(-3)
     next_batch = time_batch
     
     random_index = random.randint(0, len(g)-1)
@@ -149,22 +168,17 @@ def simulate(g):
 
 
 if __name__ == '__main__':
-    # -------------------------------------------------------------------------------------------------------#
-    # VOTER MODEL
-    #
-    #
-    n = 100_000
-    p = 10**(-4)
+    
     choices = [-1,1]
-    g = generate_graph_ER(n, p, choices)
-    chi_squared_test(g, p)
-    
-    #simulate(g)
-    
-    n = 10_000
-    p = .001
-    #g = generate_graph_ER(n, p, choices)
-    #chi_squared_test(g, p)
-    
-    #g = generate_graph_ER(1_000, .5, choices)    
+    for n,p in zip(input_parameters['num_nodes'], input_parameters['gen_probs']):
+        for prob in input_parameters['bias_probs']:
+            # -------------------------------------------------------------------------------------------------------#
+            # VOTER MODEL
+            #
+            #
+            g = generate_graph_ER(n, p, choices, prob)
+            qq_plot(g,p)
+            chi_squared_test(g, p)
+            
+            simulate(g)
     
