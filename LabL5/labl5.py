@@ -110,11 +110,23 @@ def generate_graph_ER(n, p, choices: list, prob):
     
     return g
 
+def plot_graph(data, n, p, prob):
+    times = [time for time,_,_ in data]
+    plus = [plus for _,plus,_ in data]
+    minus = [minus for _,_,minus in data]
+    
+    plt.figure(figsize=(12,8))
+    plt.plot(times, plus, label='+1')
+    plt.plot(times,minus, label='-1')
+    plt.xlabel('Time (time unit)')
+    plt.ylabel('State variable occurrences')
+    plt.title(f'State variable occurrences over time (n_nodes={n}, neighbors_prob={p}, biased_prob={prob})')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
 def simulate(g):
     FES = PriorityQueue()
-    
-    time_batch = SIM_TIME * 10**(-3)
-    next_batch = time_batch
     
     random_index = random.randint(0, len(g)-1)
     time = 0
@@ -126,6 +138,8 @@ def simulate(g):
                     bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}]')
     
     data = []
+    plus = sum(g[node]['state'] == 1 for node in g)
+    minus = sum(g[node]['state'] == -1 for node in g)
     
     while time < SIM_TIME:
         if FES.empty():
@@ -143,28 +157,24 @@ def simulate(g):
         if neighbors:
             random_neighbor = random.choice(neighbors)
         
+            previous_state = g[current_i]['state']
             g[current_i]['state'] = g[random_neighbor]['state']
             
-        if time > next_batch: # for resource convinience store the results only after a while
-            next_batch += time_batch
-            data.append((time, sum(g[node]['state'] == 1 for node in g), sum(g[node]['state'] == -1 for node in g)))
+            if g[current_i]['state'] != previous_state:
+                if g[current_i]['state'] == 1:
+                    plus+=1
+                    minus-=1
+                else:
+                    minus+=1
+                    plus-=1
+                    
+        data.append((time, plus, minus))            
         
         inter_time = random.expovariate(1)
-        random_next_node = random.randint(0, len(g)-1)  
+        random_next_node = random.randint(0, len(g)-1)
         FES.put((time + inter_time, random_next_node))
         
-    times = [time for time,_,_ in data]
-    plus = [plus for _,plus,_ in data]
-    minus = [minus for _,_,minus in data]
-    plt.figure(figsize=(12,8))
-    plt.plot(times, plus, label='+1')
-    plt.plot(times,minus, label='-1')
-    plt.xlabel('Time (time unit)')
-    plt.ylabel('State variable occurrences')
-    plt.title(f'State variable occurrences over time')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+    return data
 
 
 if __name__ == '__main__':
@@ -180,5 +190,5 @@ if __name__ == '__main__':
             qq_plot(g,p)
             chi_squared_test(g, p)
             
-            simulate(g)
-    
+            data = simulate(g)
+            plot_graph(data, n, p, prob)
