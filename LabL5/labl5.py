@@ -29,10 +29,10 @@ import scipy.stats as stats
 input_parameters = {
     'num_nodes' : [100_000, 1_000],
     'gen_probs' : [10**(-4), .1],
-    'bias_probs' : [.5, .7, .9]
+    'bias_probs' : [.5, .8]
 }
 
-P_THRESHOLD = 8
+FACTOR_OF_10 = 8
 
 SIM_TIME = 1_000_000
 
@@ -72,7 +72,7 @@ def chi_squared_test(g, p):
     chi2_stat = np.sum((observed - expected)**2 / expected)
     p_value = 1 - stats.chi2.pdf(chi2_stat, df)
     #chi_2, p_value = stats.chisquare(f_obs=observed, f_exp=expected, ddof=df)
-    print(f'p_value = {p_value}')
+    print(f'chi_stat = {chi2_stat:.4f} - p_value = {p_value}')
     
     plt.figure(figsize=(12,8))
     plt.title('Observed and expected frequencies')
@@ -85,10 +85,12 @@ def chi_squared_test(g, p):
 def generate_graph_ER(n, p, choices: list, prob):
     g = {node: {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []} for node in range(n)}
     
-    bar_format='{l_bar}{bar:30}{n:.0f}/{total} nodes [{elapsed}<{remaining}, {rate_fmt}]'
     
-    if abs(int(np.log10(p)) - int(np.log10(n))) >= P_THRESHOLD:
+    # this calculate the differences between num_nodes and p to see if they differ at least of FACTOR_OF_10 factors of ten
+    if abs(int(np.log10(p)) - int(np.log10(n))) >= FACTOR_OF_10: # it means p is sufficiently small
         m = int((p*n*(n-1)) // 2) # expected number of edges
+        
+        bar_format='{l_bar}{bar:30}{n:.0f}/{total} edges [{elapsed}<{remaining}, {rate_fmt}]'
         
         for _ in tqdm(range(m), desc='Generating with ER with p little', # O(m) -> O(n)
                     bar_format=bar_format): 
@@ -101,7 +103,9 @@ def generate_graph_ER(n, p, choices: list, prob):
                     g[i]['neighbors'].append(j)
                     g[j]['neighbors'].append(i)
                     break
-    else:    
+    else:
+        bar_format='{l_bar}{bar:30}{n:.0f}/{total} nodes [{elapsed}<{remaining}, {rate_fmt}]'
+        
         for i in tqdm(range(n), desc='Generating with ER', bar_format=bar_format): # O(n)
             for j in range(i + 1, n): # O(log(n))
                 if random.random() < p:
@@ -186,9 +190,24 @@ if __name__ == '__main__':
             # VOTER MODEL
             #
             #
+            if prob == .5:
+                print(f'Generating and simulating G(n={n},p={p}) and no bias')
+            else:
+                print(f'Generating and simulating G(n={n},p={p}) and bias={prob}')
             g = generate_graph_ER(n, p, choices, prob)
+            n_nodes_alone = sum(g[node]['neighbors'] == [] for node in g)
+            
+            if n_nodes_alone == 1:
+                print(f'This graph has only {n_nodes_alone} node with no neighbors')
+            elif n_nodes_alone == 0:
+                print(f'This graph has no nodes with no neighbors')
+            else:
+                print(f'This graph has {n_nodes_alone} nodes with no neighbors')
+                
             qq_plot(g,p)
             chi_squared_test(g, p)
             
             data = simulate(g)
             plot_graph(data, n, p, prob)
+            
+            print('\n---------------------------------------------------------------------------------------------------------\n')
