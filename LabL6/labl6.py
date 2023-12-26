@@ -117,6 +117,40 @@ def connected_components(g):
 def get_giant_component(g):
     return max(connected_components(g), key=lambda x: len(x))
 
+def generate_z2(n, choices: list, prob):
+    dim = int(np.sqrt(n))
+    g = {(x,y): {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []}\
+        for x in range(dim) for y in range(dim)}
+    
+    for x in range(dim):
+        for y in range(dim):
+            if x+1 < dim:
+                g[(x,y)]['neighbors'].append((x+1,y))
+                g[(x+1,y)]['neighbors'].append((x,y))
+            if y+1 < dim:
+                g[(x,y)]['neighbors'].append((x,y+1))
+                g[(x,y+1)]['neighbors'].append((x,y))
+    return g
+
+def generate_z3(n, choices:list, prob):
+    dim = int(n ** (1/3))
+    g ={(x,y,z): {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []}\
+        for x in range(dim) for y in range (dim) for z in range(dim)}
+    
+    for x in range(dim):
+        for y in range(dim):
+            for z in range(dim):
+                if x+1 < dim:
+                    g[(x,y,z)]['neighbors'].append((x+1,y,z))
+                    g[(x+1,y,z)]['neighbors'].append((x,y,z))
+                if y+1 < dim:
+                    g[(x,y,z)]['neighbors'].append((x,y+1,z))
+                    g[(x,y+1,z)]['neighbors'].append((x,y,z))
+                if z+1 < dim:
+                    g[(x,y,z)]['neighbors'].append((x,y,z+1))
+                    g[(x,y,z+1)]['neighbors'].append((x,y,z))
+    return g
+
 def generate_graph_ER(n, p, choices: list, prob):
     g = {node: {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []} for node in range(n)}    
     
