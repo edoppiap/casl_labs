@@ -25,6 +25,8 @@ import scipy.stats as stats
 from multiprocessing import Pool
 import os
 import time
+import argparse
+from datetime import datetime
 
 input_parameters = {
     'num_nodes' : [10**(3)],
@@ -32,16 +34,24 @@ input_parameters = {
     'bias_probs' : [.5, .55, .6, .65, .7, .8, .9]
 }
 
-seeds = [643522, 308619,  90445, 473637, 564870, 910011]
 
-FACTOR_OF_10 = 8
+#-----------------------------------------------------------------------------------------------------------#
+# INPUT PARAMETERS
+#
+#
+#
+parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
-SIM_TIME = 1_000_000
+parser.add_argument('--n_sim', type=int, default=6,
+                    help='Number of simulation to run for the same type of graph')
+parser.add_argument('--factor_of_10', type=int, default=8,
+                    help='Difference in factor of 10 between n and p for the generation method')
+parser.add_argument('--sim_time', type=int, default=1_000_000, 
+                    help='The max time for the simulation')
+parser.add_argument('--parallelization', action='store_true',
+                    help='To runs the simulations in parallel or not (the reproducibility is compromised)')
 
-PARALLEL = False
-
-# input parameter for the num of sim to do for each combination
-N_SIM = 6 
+SEEDS = [643522, 308619,  90445, 473637, 564870, 910011]
 
 def degree_of(node):
     return len(node['neighbors'])
@@ -155,7 +165,7 @@ def generate_graph_ER(n, p, choices: list, prob):
     g = {node: {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []} for node in range(n)}    
     
     # this calculate the differences between num_nodes and p to see if they differ at least of FACTOR_OF_10 factors of ten
-    if abs(int(np.log10(p)) - int(np.log10(n))) >= FACTOR_OF_10: # it means p is sufficiently small
+    if abs(int(np.log10(p)) - int(np.log10(n))) >= args.factor_of_10: # it means p is sufficiently small
         m = int((p*n*(n-1)) // 2) # expected number of edges
         
         #bar_format='{l_bar}{bar:30}{n:.0f}/{total} edges [{elapsed}<{remaining}, {rate_fmt}]'
@@ -181,10 +191,10 @@ def generate_graph_ER(n, p, choices: list, prob):
     
     return g
 
-def plot_graph(all_data, n, p, bias):
+def plot_graph(all_data, n, p, bias, folder_path):
     
     fig, ax = plt.subplots(2,3)
-    fig.suptitle(f'State variable occurrences over time (n_nodes={n}, neighbors_prob={p}, biased_prob={bias})')
+    consensus = 0
     for i,datas in enumerate(all_data):
         len_giant_component, data = datas
         coordinates = (int(i>2), i % 3)
@@ -200,6 +210,7 @@ def plot_graph(all_data, n, p, bias):
         ax[coordinates].plot(times, plus, label='+1')
         ax[coordinates].plot(times,minus, label='-1')
         if consensus_time:
+            consensus += 1
             ax[coordinates].axvline(x=consensus_time, color='red', linestyle='--', label='Consensus time')
         ax[coordinates].set_xlabel('Time (time unit)')
         ax[coordinates].set_ylabel('State variable occurrences')
@@ -207,11 +218,14 @@ def plot_graph(all_data, n, p, bias):
         ax[coordinates].grid(True)
     handles, labels = ax[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='upper right')
+    fig.suptitle(f'State variable occurrences over time, cons_prob = {consensus_time/6 * 100:.2f}% (n_nodes={n}, neighbors_prob={p}, biased_prob={bias})')
     
     plt.tight_layout()
+    file_name = os.path.join(folder_path, f'n_{n}_p_{p}_bias_{bias}.')
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.show()
 
-def simulate(g, max_component, parallelization=False):
+def simulate(g, max_component):
     FES = PriorityQueue()
     for node in list(g.keys()):
         if node not in max_component:
@@ -219,31 +233,30 @@ def simulate(g, max_component, parallelization=False):
     lam = len(g) # wake-up process for each node follows poisson(lam = 1) distr , so the whole graph follows poisson(lam = n_nodes)
     #lam = 1
     keys = list(g.keys())
-    print(f'Keys: {keys}')
     
     random_index = random.choice(keys)
     time = 0
     
     FES.put((time, random_index))
     
-    if not parallelization:
-        pbar = tqdm(total=SIM_TIME,
-                        desc=f'Simulating sim_time = {SIM_TIME}',
+    if not args.parallelization:
+        pbar = tqdm(total=args.sim_time,
+                        desc=f'Simulating sim_time = {args.sim_time}',
                         bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}]')
     
     data = []
     plus = sum(g[node]['state'] == 1 for node in max_component)
     minus = sum(g[node]['state'] == -1 for node in max_component)
     
-    while time < SIM_TIME and not FES.empty():
+    while time < args.sim_time and not FES.empty():
     
         new_time, current_i = FES.get()
     
-        if not parallelization:
-            if new_time <= SIM_TIME: # to prevent a warning to appear
+        if not args.parallelization:
+            if new_time <= args.sim_time: # to prevent a warning to appear
                 pbar.update(new_time - time)
             else:
-                pbar.update(SIM_TIME - time)
+                pbar.update(args.sim_time - time)
                 
         time = new_time
         current = g[current_i]
@@ -273,12 +286,14 @@ def simulate(g, max_component, parallelization=False):
                 
     return len(max_component), data
 
-def run_simulation(params):
+def run_simulation(params, seed):
     choices = [-1,1]
     n, p, prob = params
     
     # this ensure that each process will be different from the other
-    seed = (os.getpid() * int(time.time())) % random.randint(0, 1_000_000)
+    if args.parallelization:
+        seed = (os.getpid() * int(time.time())) % random.randint(0, 1_000_000)
+    
     random.seed(seed)
     np.random.seed(seed)
     
@@ -293,16 +308,25 @@ def run_simulation(params):
     else:
         print(f'The giant component of this graph has {len(giant_component)} nodes')
     
-    len_giant_component, data = simulate(g, giant_component, parallelization=PARALLEL)
+    len_giant_component, data = simulate(g, giant_component)
     #plot_graph(data, n, p, prob)
     
     return len_giant_component, data
 
 
 if __name__ == '__main__':
-    np.random.seed(165215)
-    random.seed(165215)
-    n_sim = N_SIM
+    args = parser.parse_args()
+    print(f'Input parameters: {vars(args)}')
+    
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
+    folder_path = os.path.join(script_directory, 'outputs',current_time)
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+        
+    print(f'Output images will be saved in the folder: {folder_path}')
+        
+    n_sim = args.n_sim
     parameters = [(n, p, prob) for n,p in zip(input_parameters['num_nodes'],input_parameters['gen_probs']) 
                   for prob in input_parameters['bias_probs']]
     
@@ -314,23 +338,27 @@ if __name__ == '__main__':
     start_time = time.time()
     for param in parameters:
         n,p,bias = param
-        if bias == .5:
-            print(f'Generating and simulating in parallel {n_sim} graphs G(n={n},p={p}) and no bias')
+        if args.parallelization:
+            if bias == .5:
+                print(f'Generating and simulating in parallel {n_sim} graphs G(n={n},p={p}) and no bias')
+            else:
+                print(f'Generating and simulating in parallel {n_sim} graphs G(n={n},p={p}) and bias={bias}')
         else:
-            print(f'Generating and simulating in parallel {n_sim} graphs G(n={n},p={p}) and bias={bias}')
+            if bias == .5:
+                print(f'Generating and simulating sequentially {n_sim} graphs G(n={n},p={p}) and no bias')
+            else:
+                print(f'Generating and simulating sequentially {n_sim} graphs G(n={n},p={p}) and bias={bias}')
             
-        if PARALLEL:
+        if args.parallelization:
             with Pool(n_sim) as pool:
                 datas = pool.map(run_simulation, [param]*n_sim)
                 #all_data.append(datas)
         else:
             datas = []
-            for _ in range(n_sim):
-                datas.append(run_simulation(param))
-        plot_graph(datas, n, p, bias)
+            for i in range(n_sim):
+                datas.append(run_simulation(param, SEEDS[i]))
+        plot_graph(datas, n, p, bias, folder_path)
     
     print(f'The simulation took: {time.time() - start_time:.2f}s ({(time.time() - start_time) / 60:.2f}min)')
-            
-    # utilizzo di all_data per altre analisi
             
     print('\n---------------------------------------------------------------------------------------------------------\n')
