@@ -202,14 +202,11 @@ def plot_graph(datas, n, p, folder_path):
     intervals = [data[1] for data in datas]
     biases = [data[2] for data in datas]
     
-    #fig.suptitle(f'State variable occurrences over time, cons_prob = {consensus_time/6 * 100:.2f}% (n_nodes={n}, neighbors_prob={p}, biased_prob={bias})')
     plt.figure(figsize=(12,8))
-    plt.plot(biases, times, marker='o', label='Time')
-    #plt.plot(biases, consensus, marker='o', label='Consensus')
-    for x, y in zip(biases, times):
-        if np.isnan(y):
-            plt.text(x, max(times), '∞', fontsize=12, ha='center', va='bottom')
-    plt.ylim(0, max(times) + 10)
+    plt.plot(biases, times, label='Time', c='b')
+    plt.errorbar(biases, times, yerr=[[t-interval[0] for t,interval in zip(times,intervals)],
+                                    [interval[1]-t for t,interval in zip(times,intervals)]],
+                 fmt='o', capsize=5, c='b', zorder=1)
     plt.xlabel('Biases')
     plt.ylabel('Times')
     plt.grid(True)
