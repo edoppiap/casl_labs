@@ -30,8 +30,8 @@ from datetime import datetime
 from scipy.stats import t
 
 input_parameters = {
-    'num_nodes' : [100, 10**(3)],
-    'gen_probs' : [.2, 10**(-3)],
+    'num_nodes' : [100, 10**(3), 10**(4)],
+    'gen_probs' : [.1, .01, .001],
     'bias_probs' : [.5, .55, .6, .65, .7, .8, .9]
 }
 
@@ -44,7 +44,7 @@ input_parameters = {
 parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
 parser.add_argument('--n_sim', type=int, default=6,
-                    help='Number of simulation to run for the same type of graph')
+                    help='Minimum number of simulation to run for the same type of graph')
 parser.add_argument('--factor_of_10', type=int, default=8,
                     help='Difference in factor of 10 between n and p for the generation method')
 parser.add_argument('--sim_time', type=int, default=1_000_000, 
@@ -55,6 +55,8 @@ parser.add_argument('--accuracy_threshold', type=float, default=.8,
                     help='Accuracy value for which we accept the result')
 parser.add_argument('--confidence_level', type=float, default=.8,
                     help='Value of confidence we want for the accuracy calculation')
+parser.add_argument('--verbosity', action='store_true',
+                    help='To see the consensus sum of the nodes')
 
 SEEDS = [643522, 308619,  90445, 473637, 564870, 910011]
 
@@ -263,7 +265,8 @@ def simulate(g, max_component):
             else:
                 pbar.update(args.sim_time - time)"""
         
-        print(f'Plus: {plus}, minus: {minus}'.ljust(21), end='\r')
+        if args.verbosity:
+            print(f'Plus: {plus}, minus: {minus}'.ljust(21), end='\r')
                 
         time = new_time
         current = g[current_i]
@@ -285,7 +288,7 @@ def simulate(g, max_component):
         #data.append((time, plus, minus))
         
         if plus == len(max_component) or minus == len(max_component):
-            return time
+            return time, plus == len(max_component)
         
         inter_time = random.expovariate(lam)
         # again, significantly more efficient than
@@ -313,19 +316,22 @@ def run_simulation(params, seed):
     
     giant_component = get_giant_component(g)
     
-    if len(giant_component) == len(g):
-        print(f'This graph is connected')
-    else:
-        print(f'The giant component of this graph has {len(giant_component)} nodes')
+    if args.verbosity:
+        if len(giant_component) == len(g):
+            print(f'This graph is connected')
+        else:
+            print(f'The giant component of this graph has {len(giant_component)} nodes')
     
     start_time = time.time()
     result = simulate(g, giant_component)
     #plot_graph(data, n, p, prob)
-    if result is None:
-        print(f'This graph did not reach consensus under the max simulation time')
-    else:
-        print(f'This graph reached consensus in {result:.2f} units of time')
-    print(f'The simulation took: {time.time() - start_time:.2f}s ({(time.time() - start_time) / 60:.2f}min)')
+    if args.verbosity:
+        if result is None:
+            print(f'This graph did not reach consensus under the max simulation time')
+        else:
+            t, _ = result
+            print(f'This graph reached consensus in {t:.2f} units of time')
+        print(f'The simulation took: {time.time() - start_time:.2f}s ({(time.time() - start_time) / 60:.2f}min)')
     return result
 
 # -------------------------------------------------------------------------------------------------------#
@@ -351,6 +357,10 @@ def calculate_confidence_interval(data, conf):
     return mean,interval,acc
 
 if __name__ == '__main__':
+    
+    random.seed(42)
+    np.random.seed(42)
+    
     args = parser.parse_args()
     print(f'Input parameters: {vars(args)}')
     
@@ -381,9 +391,9 @@ if __name__ == '__main__':
                     print(f'Generating and simulating in parallel {n_sim} graphs G(n={n},p={p}) and bias={bias}')
             else:
                 if bias == .5:
-                    print(f'Generating and simulating sequentially {n_sim} graphs G(n={n},p={p}) and no bias')
+                    print(f'Generating and simulating sequentially at least {n_sim} graphs G(n={n},p={p}) and no bias')
                 else:
-                    print(f'Generating and simulating sequentially {n_sim} graphs G(n={n},p={p}) and bias={bias}')
+                    print(f'Generating and simulating sequentially at least {n_sim} graphs G(n={n},p={p}) and bias={bias}')
             print('-----------------------')
                 
             if args.parallelization:
@@ -391,20 +401,21 @@ if __name__ == '__main__':
                     datas = pool.map(run_simulation, [param]*n_sim)
                     #all_data.append(datas)
             else:
-                acc, i, doesn = 0,0,0
+                acc, i, plus = 0,0,0
                 while acc < args.accuracy_threshold or i < n_sim:
-                    print(f'Graph {i+1}:')
+                    if args.verbosity: print(f'Graph {i+1}:')
                     result = run_simulation(param, 42)
                     if result is not None:
-                        datas.append(result)
-                        if len(datas) > 1:
+                        consensus_time, consensus = result
+                        datas.append(consensus_time)
+                        if len(datas) > 1 and i % n_sim == 0:
                             mean, interval, acc = calculate_confidence_interval(datas, conf=args.confidence_level)
-                            print(f'Accuracy: {acc}')
-                    else:
-                        doesn+= 1
+                            if args.verbosity: print(f'Accuracy: {acc}')
+                        if consensus:
+                            plus += 1
                     i+=1
-                    print('-----------------------')
-                all_datas.append((mean,interval,bias,(doesn/i)))
+                    if args.verbosity: print('-----------------------')
+                all_datas.append((mean,interval,bias,(plus/i)))
             #plot_graph(datas, n, p, bias, folder_path)
         plot_graph(all_datas, n, p, folder_path)
             
