@@ -29,13 +29,6 @@ import argparse
 from datetime import datetime
 from scipy.stats import t
 
-input_parameters = {
-    'num_nodes' : [100, 10**(3), 10**(4)],
-    'gen_probs' : [.1, .01, .001],
-    'bias_probs' : [.5, .55, .6, .65, .7, .8, .9]
-}
-
-
 #-----------------------------------------------------------------------------------------------------------#
 # INPUT PARAMETERS
 #
@@ -43,22 +36,26 @@ input_parameters = {
 #
 parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
+parser.add_argument('--n_nodes', type=int, default=[100, 1000], nargs='+',
+                    help='Number of nodes in the graph to simulate')
 parser.add_argument('--n_sim', type=int, default=6,
                     help='Minimum number of simulation to run for the same type of graph')
 parser.add_argument('--factor_of_10', type=int, default=8,
                     help='Difference in factor of 10 between n and p for the generation method')
-parser.add_argument('--sim_time', type=int, default=1_000_000, 
-                    help='The max time for the simulation')
+#parser.add_argument('--sim_time', type=int, default=1_000_000, 
+#                    help='The max time for the simulation')
 parser.add_argument('--parallelization', action='store_true',
                     help='To runs the simulations in parallel or not (the reproducibility is compromised)')
 parser.add_argument('--accuracy_threshold', type=float, default=.8,
                     help='Accuracy value for which we accept the result')
 parser.add_argument('--confidence_level', type=float, default=.8,
                     help='Value of confidence we want for the accuracy calculation')
-parser.add_argument('--verbosity', action='store_true',
+parser.add_argument('--verbose', action='store_true',
                     help='To see the consensus sum of the nodes')
 
 SEEDS = [643522, 308619,  90445, 473637, 564870, 910011]
+
+BIAS_PROB = [.5, .55, .6, .65, .7, .8, .9]
 
 def degree_of(node):
     return len(node['neighbors'])
@@ -242,10 +239,10 @@ def simulate(g, max_component):
     #lam = 1
     keys = list(g.keys())
     
-    random_index = random.choice(keys)
+    current_i = random.choice(keys)
     time = 0
     
-    FES.put((time, random_index))
+    #FES.put((time, random_index))
     
     """if not args.parallelization:
         pbar = tqdm(total=args.sim_time,
@@ -255,9 +252,9 @@ def simulate(g, max_component):
     plus = sum(g[node]['state'] == 1 for node in max_component)
     minus = sum(g[node]['state'] == -1 for node in max_component)
     
-    while time < args.sim_time and not FES.empty():
+    while True:
     
-        new_time, current_i = FES.get()
+        #new_time, current_i = FES.get()
     
         """if not args.parallelization:
             if new_time <= args.sim_time: # to prevent a warning to appear
@@ -265,10 +262,10 @@ def simulate(g, max_component):
             else:
                 pbar.update(args.sim_time - time)"""
         
-        if args.verbosity:
+        if args.verbose:
             print(f'Plus: {plus}, minus: {minus}'.ljust(21), end='\r')
                 
-        time = new_time
+        #time = new_time
         current = g[current_i]
         neighbors = current['neighbors']
         if neighbors:
@@ -290,17 +287,11 @@ def simulate(g, max_component):
         if plus == len(max_component) or minus == len(max_component):
             return time, plus == len(max_component)
         
-        inter_time = random.expovariate(lam)
-        # again, significantly more efficient than
-        random_next_node = random.choice(keys)
-        #random_next_node = random.randint(0, len(keys)-1)
-        
-        FES.put((time + inter_time, random_next_node))
-                
-    return None
+        time += random.expovariate(lam)
+        current_i = random.choice(keys)
 
-def run_simulation(params, seed):
-    choices = [-1,1]
+def run_simulation(params, args):
+    choices = [1,-1]
     n, p, prob = params
     
     # this ensure that each process will be different from the other
@@ -316,7 +307,7 @@ def run_simulation(params, seed):
     
     giant_component = get_giant_component(g)
     
-    if args.verbosity:
+    if args.verbose:
         if len(giant_component) == len(g):
             print(f'This graph is connected')
         else:
@@ -325,7 +316,7 @@ def run_simulation(params, seed):
     start_time = time.time()
     result = simulate(g, giant_component)
     #plot_graph(data, n, p, prob)
-    if args.verbosity:
+    if args.verbose:
         if result is None:
             print(f'This graph did not reach consensus under the max simulation time')
         else:
@@ -373,7 +364,7 @@ if __name__ == '__main__':
     print(f'Output images will be saved in the folder: {folder_path}')
         
     n_sim = args.n_sim
-    parameters = [(n, p) for n,p in zip(input_parameters['num_nodes'],input_parameters['gen_probs'])]
+    parameters = [(n, 10/n) for n in args.n_nodes]
     
     # -------------------------------------------------------------------------------------------------------#
     # VOTER MODEL
@@ -381,7 +372,7 @@ if __name__ == '__main__':
     #
     for n,p in parameters:
         all_datas = []
-        for bias in input_parameters['bias_probs']:
+        for bias in BIAS_PROB:
             datas = []
             param = n,p,bias
             if args.parallelization:
@@ -395,27 +386,31 @@ if __name__ == '__main__':
                 else:
                     print(f'Generating and simulating sequentially at least {n_sim} graphs G(n={n},p={p}) and bias={bias}')
             print('-----------------------')
-                
-            if args.parallelization:
-                with Pool(n_sim) as pool:
-                    datas = pool.map(run_simulation, [param]*n_sim)
-                    #all_data.append(datas)
-            else:
-                acc, i, plus = 0,0,0
-                while acc < args.accuracy_threshold or i < n_sim:
-                    if args.verbosity: print(f'Graph {i+1}:')
-                    result = run_simulation(param, 42)
+            
+            
+            acc, i, plus = 0,0,0
+            while acc < args.accuracy_threshold or i < n_sim:
+                if args.parallelization:
+                    with Pool(n_sim) as pool:
+                        results = pool.map(run_simulation, [param]*n_sim)
+                        datas.append([t for t,_ in results])
+                        plus += sum(1 for _,consensus in results if consensus)
+                else:
+                    if args.verbose: print(f'Graph {i+1}:')
+                    result = run_simulation(param, args)
                     if result is not None:
                         consensus_time, consensus = result
                         datas.append(consensus_time)
-                        if len(datas) > 1 and i % n_sim == 0:
-                            mean, interval, acc = calculate_confidence_interval(datas, conf=args.confidence_level)
-                            if args.verbosity: print(f'Accuracy: {acc}')
-                        if consensus:
-                            plus += 1
-                    i+=1
-                    if args.verbosity: print('-----------------------')
-                all_datas.append((mean,interval,bias,(plus/i)))
+                    if consensus:
+                        plus += 1
+                if len(datas) > 1 and i % n_sim == 0:
+                    mean, interval, acc = calculate_confidence_interval(datas, conf=args.confidence_level)
+                    if args.verbose: print(f'Accuracy: {acc}')
+                
+                i+=1
+                if args.verbose: print('-----------------------')
+            print(f'Number of simulation: {i}')
+            all_datas.append((mean,interval,bias,(plus/i)))
             #plot_graph(datas, n, p, bias, folder_path)
         plot_graph(all_datas, n, p, folder_path)
             
