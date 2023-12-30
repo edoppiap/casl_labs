@@ -212,8 +212,14 @@ def plot_graph(datas, n, p, type_of_graph, folder_path):
     plt.xlabel('Biases')
     plt.ylabel('Times')
     plt.grid(True)
-    plt.title(f'Biases in the graph vs time for the consensus - Graph {type_of_graph} (n={n}, p={p})')
-    file_name = os.path.join(folder_path, f'{type_of_graph}_n_{n}_p_{p}_times.')
+    title_str = f'Biases in the graph vs time for the consensus - Graph {type_of_graph} (n={n}'
+    if type_of_graph == 'ER': title_str += f', p={p}'
+    title_str += ')'
+    plt.title(title_str)
+    file_str = f'{type_of_graph}_n_{n}'
+    if type_of_graph == 'ER': file_str += f'_p_{p}'
+    file_str += '_times.'
+    file_name = os.path.join(folder_path, file_str)
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
     
@@ -222,8 +228,14 @@ def plot_graph(datas, n, p, type_of_graph, folder_path):
     plt.xlabel('Biases')
     plt.ylabel('Consensus percentages')
     plt.grid(True)
-    plt.title(f'Biases in the graph vs consensus percentages - Graph {type_of_graph} (n={n}, p={p})')
-    file_name = os.path.join(folder_path, f'{type_of_graph}_n_{n}_p_{p}_consensus.')
+    title_str = f'Biases in the graph vs consensus percentages - Graph {type_of_graph} (n={n}'
+    if type_of_graph == 'ER': title_str += f', p={p}'
+    title_str += ')'
+    plt.title(title_str)
+    file_str = f'{type_of_graph}_n_{n}'
+    if type_of_graph == 'ER': file_str += f'_p_{p}'
+    file_str += '_consensus.'
+    file_name = os.path.join(folder_path, file_str)
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
     #plt.show()
@@ -386,10 +398,14 @@ if __name__ == '__main__':
                     else:
                         print(f'Generating and simulating in parallel {n_sim} graphs {type_of_graph}(n={n},p={p}) and bias={bias}')
                 else:
-                    if bias == .5:
-                        print(f'Generating and simulating sequentially at least {n_sim} graphs {type_of_graph}(n={n},p={p}) and no bias')
-                    else:
-                        print(f'Generating and simulating sequentially at least {n_sim} graphs {type_of_graph}(n={n},p={p}) and bias={bias}')
+                    print_str = f'Generating and simulating sequentially at least {n_sim} graphs {type_of_graph}'
+                    
+                    if type_of_graph == 'ER': print_str += f'(n={n},p={p})'
+                    else: print_str += f'(n={n})'
+                    
+                    if bias == .5: print_str += ' and no bias'
+                    else: print_str += f' and bias={bias}'
+                    print(print_str)
                 print('-----------------------')
                 
                 
