@@ -38,6 +38,8 @@ parser = argparse.ArgumentParser(description='Input parameters for the simulatio
 
 parser.add_argument('--n_nodes', type=int, default=[100, 1000], nargs='+',
                     help='Number of nodes in the graph to simulate')
+parser.add_argument('--types_of_graph', type=str, default=['ER','Z2','Z3'], nargs='+',
+                    choices=['ER', 'Z2', 'Z3'], help='Type of graph to simulate')
 parser.add_argument('--n_sim', type=int, default=6,
                     help='Minimum number of simulation to run for the same type of graph')
 parser.add_argument('--factor_of_10', type=int, default=8,
@@ -195,7 +197,7 @@ def generate_graph_ER(n, p, choices: list, prob):
     
     return g
 
-def plot_graph(datas, n, p, folder_path):
+def plot_graph(datas, n, p, type_of_graph, folder_path):
     
     consensus = [data[3] for data in datas]
     times = [data[0] for data in datas]
@@ -210,7 +212,7 @@ def plot_graph(datas, n, p, folder_path):
     plt.xlabel('Biases')
     plt.ylabel('Times')
     plt.grid(True)
-    plt.title(f'Biases in the graph vs time for the consensus')
+    plt.title(f'Biases in the graph vs time for the consensus - Graph {type_of_graph} (n={n}, p={p})')
     file_name = os.path.join(folder_path, f'n_{n}_p_{p}_times.')
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
@@ -220,7 +222,7 @@ def plot_graph(datas, n, p, folder_path):
     plt.xlabel('Biases')
     plt.ylabel('Consensus percentages')
     plt.grid(True)
-    plt.title(f'Biases in the graph vs consensus percentages')
+    plt.title(f'Biases in the graph vs consensus percentages - Graph {type_of_graph} (n={n}, p={p})')
     file_name = os.path.join(folder_path, f'n_{n}_p_{p}_consensus.')
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
@@ -287,7 +289,7 @@ def simulate(g, max_component):
         time += random.expovariate(lam)
         current_i = random.choice(keys)
 
-def run_simulation(params, args):
+def run_simulation(params, type_of_graph):
     choices = [1,-1]
     n, p, prob = params
     
@@ -298,7 +300,12 @@ def run_simulation(params, args):
     #random.seed(seed)
     #np.random.seed(seed)
     
-    g = generate_graph_ER(n, p, choices, prob)            
+    if type_of_graph == 'ER':
+        g = generate_graph_ER(n, p, choices, prob)
+    elif type_of_graph == 'Z2':
+        g = generate_z2(n, choices, prob)
+    else:
+        g = generate_z3(n, choices, prob)          
     #qq_plot(g,p)
     #chi_squared_test(g, p)
     
@@ -367,48 +374,49 @@ if __name__ == '__main__':
     # VOTER MODEL
     #
     #
-    for n,p in parameters:
-        all_datas = []
-        for bias in BIAS_PROB:
-            datas = []
-            param = n,p,bias
-            if args.parallelization:
-                if bias == .5:
-                    print(f'Generating and simulating in parallel {n_sim} graphs G(n={n},p={p}) and no bias')
-                else:
-                    print(f'Generating and simulating in parallel {n_sim} graphs G(n={n},p={p}) and bias={bias}')
-            else:
-                if bias == .5:
-                    print(f'Generating and simulating sequentially at least {n_sim} graphs G(n={n},p={p}) and no bias')
-                else:
-                    print(f'Generating and simulating sequentially at least {n_sim} graphs G(n={n},p={p}) and bias={bias}')
-            print('-----------------------')
-            
-            
-            acc, i, plus = 0,0,0
-            while acc < args.accuracy_threshold or i < n_sim:
+    for type_of_graph in args.types_of_graph:
+        for n,p in parameters:
+            all_datas = []
+            for bias in BIAS_PROB:
+                datas = []
+                param = n,p,bias
                 if args.parallelization:
-                    with Pool(n_sim) as pool:
-                        results = pool.map(run_simulation, [param]*n_sim)
-                        datas.append([t for t,_ in results])
-                        plus += sum(1 for _,consensus in results if consensus)
+                    if bias == .5:
+                        print(f'Generating and simulating in parallel {n_sim} graphs {type_of_graph}(n={n},p={p}) and no bias')
+                    else:
+                        print(f'Generating and simulating in parallel {n_sim} graphs {type_of_graph}(n={n},p={p}) and bias={bias}')
                 else:
-                    if args.verbose: print(f'Graph {i+1}:')
-                    result = run_simulation(param, args)
-                    if result is not None:
-                        consensus_time, consensus = result
-                        datas.append(consensus_time)
-                    if consensus:
-                        plus += 1
-                if len(datas) > 1 and i % n_sim == 0:
-                    mean, interval, acc = calculate_confidence_interval(datas, conf=args.confidence_level)
-                    if args.verbose: print(f'Accuracy: {acc}')
+                    if bias == .5:
+                        print(f'Generating and simulating sequentially at least {n_sim} graphs {type_of_graph}(n={n},p={p}) and no bias')
+                    else:
+                        print(f'Generating and simulating sequentially at least {n_sim} graphs {type_of_graph}(n={n},p={p}) and bias={bias}')
+                print('-----------------------')
                 
-                i+=1
-                if args.verbose: print('-----------------------')
-            print(f'Number of simulation: {i}')
-            all_datas.append((mean,interval,bias,(plus/i)))
-            #plot_graph(datas, n, p, bias, folder_path)
-        plot_graph(all_datas, n, p, folder_path)
+                
+                acc, i, plus = 0,0,0
+                while acc < args.accuracy_threshold or i < n_sim:
+                    if args.parallelization:
+                        with Pool(n_sim) as pool:
+                            results = pool.map(run_simulation, [param]*n_sim)
+                            datas.append([t for t,_ in results])
+                            plus += sum(1 for _,consensus in results if consensus)
+                    else:
+                        if args.verbose: print(f'Graph {i+1}:')
+                        result = run_simulation(param, type_of_graph)
+                        if result is not None:
+                            consensus_time, consensus = result
+                            datas.append(consensus_time)
+                        if consensus:
+                            plus += 1
+                    if len(datas) > 1 and i % n_sim == 0:
+                        mean, interval, acc = calculate_confidence_interval(datas, conf=args.confidence_level)
+                        if args.verbose: print(f'Accuracy: {acc}')
+                    
+                    i+=1
+                    if args.verbose: print('-----------------------')
+                print(f'Number of simulation: {i}')
+                all_datas.append((mean,interval,bias,(plus/i)))
+                #plot_graph(datas, n, p, bias, folder_path)
+            plot_graph(all_datas, n, p, type_of_graph, folder_path)
             
     print('\n---------------------------------------------------------------------------------------------------------\n')
