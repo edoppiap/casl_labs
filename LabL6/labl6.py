@@ -213,7 +213,7 @@ def plot_graph(datas, n, p, type_of_graph, folder_path):
     plt.ylabel('Times')
     plt.grid(True)
     plt.title(f'Biases in the graph vs time for the consensus - Graph {type_of_graph} (n={n}, p={p})')
-    file_name = os.path.join(folder_path, f'n_{n}_p_{p}_times.')
+    file_name = os.path.join(folder_path, f'{type_of_graph}_n_{n}_p_{p}_times.')
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
     
@@ -223,7 +223,7 @@ def plot_graph(datas, n, p, type_of_graph, folder_path):
     plt.ylabel('Consensus percentages')
     plt.grid(True)
     plt.title(f'Biases in the graph vs consensus percentages - Graph {type_of_graph} (n={n}, p={p})')
-    file_name = os.path.join(folder_path, f'n_{n}_p_{p}_consensus.')
+    file_name = os.path.join(folder_path, f'{type_of_graph}_n_{n}_p_{p}_consensus.')
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
     #plt.show()
