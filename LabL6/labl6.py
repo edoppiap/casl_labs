@@ -28,6 +28,7 @@ import time
 import argparse
 from datetime import datetime
 from scipy.stats import t
+import pandas as pd
 
 #-----------------------------------------------------------------------------------------------------------#
 # INPUT PARAMETERS
@@ -197,7 +198,44 @@ def generate_graph_ER(n, p, choices: list, prob):
     
     return g
 
-def plot_graph(datas, n, p, type_of_graph, folder_path):
+def plot_graph_generally(results_df, folder_path):
+    file_name = os.path.join(folder_path, 'results.csv')
+    results_df.to_csv(file_name)
+    
+    for n_nodes in results_df['n nodes'].unique():
+        subset_df = results_df[results_df['n nodes'] == n_nodes]
+        
+        plt.figure(figsize=(12,8))
+        for type_of_graph in subset_df['type of graph'].unique():
+            selected_df = subset_df[subset_df['type of graph'] == type_of_graph]
+            plt.plot(selected_df['bias prob'], 
+                    selected_df['consensus time mean'], label=f'{type_of_graph}')
+            plt.errorbar(selected_df['bias prob'], selected_df['consensus time mean'], 
+                        yerr=[selected_df['consensus time mean'] - selected_df['interval low'],
+                            selected_df['interval up'] - selected_df['consensus time mean']],
+                        fmt='o', capsize=5, c='black', zorder=1)
+        plt.xlabel('Biases')
+        plt.ylabel('Times')
+        plt.title(f'Biases vs average time to reach consensus with n = {n_nodes}')
+        plt.legend()
+        plt.grid(True)
+        file_name = os.path.join(folder_path, f'times_n_{n}.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        #plt.show()
+        
+        plt.figure(figsize=(12,8))
+        for type_of_graph in subset_df['type of graph'].unique():
+            selected_df = subset_df[subset_df['type of graph'] == type_of_graph]
+            plt.plot(selected_df['bias prob'], selected_df['plus'] / selected_df['n runs'], label=f'Graph {type_of_graph}', marker='o')
+        plt.xlabel('Biases')
+        plt.ylabel('Consensus percentages')
+        plt.legend()
+        plt.grid(True)
+        plt.title(f'Biases in the graph vs consensus percentages with n = {n_nodes}')
+        file_name = os.path.join(folder_path, f'consensus_n_{n}.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+
+def plot_graph_single(datas, n, p, type_of_graph, folder_path):
     
     consensus = [data[3] for data in datas]
     times = [data[0] for data in datas]
@@ -381,6 +419,7 @@ if __name__ == '__main__':
         
     n_sim = args.n_sim
     parameters = [(n, 10/n) for n in args.n_nodes]
+    results_df = []
     
     # -------------------------------------------------------------------------------------------------------#
     # VOTER MODEL
@@ -430,9 +469,25 @@ if __name__ == '__main__':
                     
                     i+=1
                     if args.verbose: print('-----------------------')
+                    
+                result = {
+                    'type of graph': type_of_graph,
+                    'n nodes': n,
+                    'edge prob': p if type_of_graph == 'ER' else None,
+                    'bias prob': bias,
+                    'consensus time mean': mean,
+                    'accuracy': acc,
+                    'interval low': interval[0],
+                    'interval up': interval[1],
+                    'plus': plus,
+                    'n runs': i
+                }
+                results_df.append(pd.DataFrame([result]))
                 print(f'Number of simulation: {i}')
                 all_datas.append((mean,interval,bias,(plus/i)))
                 #plot_graph(datas, n, p, bias, folder_path)
-            plot_graph(all_datas, n, p, type_of_graph, folder_path)
+            plot_graph_single(all_datas, n, p, type_of_graph, folder_path)
+    results_df = pd.concat(results_df, ignore_index=True)
+    plot_graph_generally(results_df, folder_path)
             
     print('\n---------------------------------------------------------------------------------------------------------\n')
