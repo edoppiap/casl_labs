@@ -2,12 +2,12 @@
     The goal of Lab L6 is to study properties of  the dynamic processes 
     over graphs.
 
-    Consider a voter model over a G(n,p) with n =10^5 and p_g=10^{-4}.
-    According to the initial condition,   each node  has a probability p_1  of being in state +1 with p_1\in {0.55, 0.6, 065, 0.7,  0.8 0.9}.
+    Consider a voter model over a G(n,p) with  n chosen in the range [10^3, 10^4]  ( in such a way that simulation last a reasonable time i.e. 5/10 min at most) and p_g= 10/n.
+    According to the initial condition,   each node  has a probability p_1  of being in state +1 with p_1\in {0.51, 0.55, 0.6, 0.7}.
     Evaluate the probability of reaching  a +1-consensus  (if the graph is not connected consider only the giant component). Evaluate, as well, the time needed to reach consensus.
     
     Then consider a voter model over finite portion of   Z^2 and Z^3.
-    Fix p_1=0.6 and, for several values of n \in[10^3, 10^5], estimate, as before,
+    Fix p_1=0.51 and, for 2/3 values of n \in[10^2, 10^4], estimate, as before,
     the probability of reaching  a +1-consensus  and the time needed to reach consensus.
 
     Deliver the code along with a brief report, in which you present and comment your results. Are the obtained results in line with  theoretical predictions?
@@ -58,7 +58,7 @@ parser.add_argument('--verbose', action='store_true',
 
 SEEDS = [643522, 308619,  90445, 473637, 564870, 910011]
 
-BIAS_PROB = [.5, .55, .6, .65, .7, .8, .9]
+BIAS_PROB = [0.51, 0.55, 0.6, 0.7]
 
 def degree_of(node):
     return len(node['neighbors'])
@@ -219,7 +219,7 @@ def plot_graph_generally(results_df, folder_path):
         plt.title(f'Biases vs average time to reach consensus with n = {n_nodes}')
         plt.legend()
         plt.grid(True)
-        file_name = os.path.join(folder_path, f'times_n_{n}.')
+        file_name = os.path.join(folder_path, f'times_n_{n_nodes}.')
         plt.savefig(file_name, dpi=300, bbox_inches='tight')
         #plt.show()
         
@@ -232,7 +232,7 @@ def plot_graph_generally(results_df, folder_path):
         plt.legend()
         plt.grid(True)
         plt.title(f'Biases in the graph vs consensus percentages with n = {n_nodes}')
-        file_name = os.path.join(folder_path, f'consensus_n_{n}.')
+        file_name = os.path.join(folder_path, f'consensus_n_{n_nodes}.')
         plt.savefig(file_name, dpi=300, bbox_inches='tight')
 
 def plot_graph_single(datas, n, p, type_of_graph, folder_path):
@@ -419,7 +419,7 @@ if __name__ == '__main__':
         
     n_sim = args.n_sim
     parameters = [(n, 10/n) for n in args.n_nodes]
-    results_df = []
+    final_results = []
     
     # -------------------------------------------------------------------------------------------------------#
     # VOTER MODEL
@@ -482,12 +482,12 @@ if __name__ == '__main__':
                     'plus': plus,
                     'n runs': i
                 }
-                results_df.append(pd.DataFrame([result]))
+                final_results.append(pd.DataFrame([result]))
                 print(f'Number of simulation: {i}')
                 all_datas.append((mean,interval,bias,(plus/i)))
                 #plot_graph(datas, n, p, bias, folder_path)
             plot_graph_single(all_datas, n, p, type_of_graph, folder_path)
-    results_df = pd.concat(results_df, ignore_index=True)
-    plot_graph_generally(results_df, folder_path)
+    final_df = pd.concat(final_results, ignore_index=True)
+    plot_graph_generally(final_df, folder_path)
             
     print('\n---------------------------------------------------------------------------------------------------------\n')
