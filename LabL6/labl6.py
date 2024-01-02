@@ -357,7 +357,7 @@ def run_simulation(params, type_of_graph):
     time_datas, cons_datas = [],[] # store result data for this iteration
     time_acc, cons_acc, i, plus = 0,0,0,0
     # continue to run simulations until a accettable accuracy is reached
-    while (time_acc < args.accuracy_threshold and cons_acc < args.accuracy_threshold) or i < n_sim:
+    while time_acc < args.accuracy_threshold or cons_acc < args.accuracy_threshold or i < n_sim:
         if type_of_graph == 'ER':
             g = generate_graph_ER(n, p, choices, prob)
         elif type_of_graph == 'Z2':
@@ -385,7 +385,7 @@ def run_simulation(params, type_of_graph):
             consensus_time, consensus = result
             if consensus:
                 plus += 1
-            if i != 0: cons_datas.append((plus/i))
+            if i > 0: cons_datas.append((plus/i))
             time_datas.append(consensus_time)
         
         # calculate confidence level each n_sim iteration
@@ -404,10 +404,11 @@ def run_simulation(params, type_of_graph):
         'edge prob': p,
         'bias prob': bias,
         'consensus time mean': time_mean,
-        'accuracy': time_acc,
+        'time accuracy': time_acc,
         'time interval low': time_interval[0],
         'time interval up': time_interval[1],
         'consensus prob mean': cons_mean,
+        'consensus prob accuracy': cons_acc,
         'consensus interval low': cons_interval[0],
         'consensus interval up': cons_interval[1],
         'plus': plus,
