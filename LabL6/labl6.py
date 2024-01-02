@@ -376,6 +376,8 @@ def run_simulation(params, type_of_graph):
         if args.verbose: print(f'Graph {i+1}:')
         result = simulate(g, giant_component)
         
+        i+=1
+        
         if args.verbose:
             t, _ = result
             print(f'This graph reached consensus in {t:.2f} units of time')
@@ -395,7 +397,6 @@ def run_simulation(params, type_of_graph):
                 cons_mean, cons_interval, cons_acc = calculate_confidence_interval(cons_datas, conf=args.confidence_level)
             if args.verbose: print(f'Accuracy: {time_acc}')
         
-        i+=1
         if args.verbose: print('-----------------------')
         
     result = {
