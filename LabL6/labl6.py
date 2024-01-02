@@ -19,10 +19,8 @@
 from queue import PriorityQueue, Queue
 import random
 import numpy as np
-from tqdm import tqdm
 import matplotlib.pyplot as plt
 import scipy.stats as stats
-from multiprocessing import Pool
 import os
 import time
 import argparse
@@ -37,18 +35,16 @@ import pandas as pd
 #
 parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
-parser.add_argument('--n_nodes', type=int, default=[100, 1000], nargs='+',
+parser.add_argument('--n_nodes_er', type=int, default=[1000, 3000], nargs='+',
                     help='Number of nodes in the graph to simulate')
+parser.add_argument('--n_nodes_z', type=int, default=[100, 200, 400, 600, 800, 1000], nargs='+',
+                    help='Number of nodes to simulate for the Z^2 and Z^3 graph')
 parser.add_argument('--types_of_graph', type=str, default=['ER','Z2','Z3'], nargs='+',
                     choices=['ER', 'Z2', 'Z3'], help='Type of graph to simulate')
 parser.add_argument('--n_sim', type=int, default=6,
                     help='Minimum number of simulation to run for the same type of graph')
 parser.add_argument('--factor_of_10', type=int, default=8,
                     help='Difference in factor of 10 between n and p for the generation method')
-#parser.add_argument('--sim_time', type=int, default=1_000_000, 
-#                    help='The max time for the simulation')
-parser.add_argument('--parallelization', action='store_true',
-                    help='To runs the simulations in parallel or not (the reproducibility is compromised)')
 parser.add_argument('--accuracy_threshold', type=float, default=.8,
                     help='Accuracy value for which we accept the result')
 parser.add_argument('--confidence_level', type=float, default=.8,
@@ -58,7 +54,7 @@ parser.add_argument('--verbose', action='store_true',
 
 SEEDS = [643522, 308619,  90445, 473637, 564870, 910011]
 
-BIAS_PROB = [0.51, 0.55, 0.6, 0.7]
+BIAS_PROB = [.51, .55, .6, .7]
 
 def degree_of(node):
     return len(node['neighbors'])
@@ -80,7 +76,6 @@ def chi_squared_test(g, p):
     n = len(g)
     lam = (n-1)*p
     degrees = np.array([degree_of(g[node]) for node in g])
-    #lam = degrees.mean()
     
     x = np.unique(degrees)
     observed, _ = np.histogram(degrees, bins=x, density=True)
@@ -88,11 +83,8 @@ def chi_squared_test(g, p):
     x = x[:-1]
     expected = stats.poisson.pmf(x, lam)
     
-    #expected = stats.binom.pmf(x, n, p)
-    
     chi2_stat = np.sum((observed - expected)**2 / expected)
     p_value = 1 - stats.chi2.pdf(chi2_stat, df)
-    #chi_2, p_value = stats.chisquare(f_obs=observed, f_exp=expected, ddof=df)
     print(f'chi_stat = {chi2_stat:.4f} - p_value = {p_value}')
     
     plt.figure(figsize=(12,8))
@@ -121,21 +113,19 @@ def BFS(g, start):
                 queue.put(neighbor)
     return visited
 
-def connected_components(g):
-    components = []
+def get_giant_component(g):
+    max_component = None
     visited = set()
     for node in g:
         if node not in visited:
             component = BFS(g, node)
             visited.update(component)
-            components.append(component)
-    return components
-
-def get_giant_component(g):
-    return max(connected_components(g), key=lambda x: len(x))
+            if max_component is None or len(component) > len(max_component):
+                max_component = component
+    return max_component
 
 def generate_z2(n, choices: list, prob):
-    dim = int(np.sqrt(n))
+    dim = int(np.ceil(n ** (1/2))) # this ensure that at least n nodes are generated
     g = {(x,y): {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []}\
         for x in range(dim) for y in range(dim)}
     
@@ -150,7 +140,7 @@ def generate_z2(n, choices: list, prob):
     return g
 
 def generate_z3(n, choices:list, prob):
-    dim = int(n ** (1/3))
+    dim = int(np.ceil(n ** (1/3))) # this ensure that at least n nodes are generated
     g ={(x,y,z): {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []}\
         for x in range(dim) for y in range (dim) for z in range(dim)}
     
@@ -175,8 +165,6 @@ def generate_graph_ER(n, p, choices: list, prob):
     if abs(int(np.log10(p)) - int(np.log10(n))) >= args.factor_of_10: # it means p is sufficiently small
         m = int((p*n*(n-1)) // 2) # expected number of edges
         
-        #bar_format='{l_bar}{bar:30}{n:.0f}/{total} edges [{elapsed}<{remaining}, {rate_fmt}]'
-        
         for _ in range(m): 
             while True:
                 i,j = tuple(random.randint(0, len(g)-1) for _ in range(2)) # pick two random nodes
@@ -198,123 +186,112 @@ def generate_graph_ER(n, p, choices: list, prob):
     
     return g
 
-def plot_graph_generally(results_df, folder_path):
+def plot_graph(results_df, folder_path):
     file_name = os.path.join(folder_path, 'results.csv')
     results_df.to_csv(file_name)
     
-    for n_nodes in results_df['n nodes'].unique():
-        subset_df = results_df[results_df['n nodes'] == n_nodes]
-        
+    types_of_graph = results_df['type of graph'].unique()
+    
+    if 'ER' in types_of_graph:
+        er_result_df = results_df[results_df['type of graph'] == 'ER']
+
         plt.figure(figsize=(12,8))
-        for type_of_graph in subset_df['type of graph'].unique():
-            selected_df = subset_df[subset_df['type of graph'] == type_of_graph]
+        for n_nodes in er_result_df["n nodes"].unique():
+            selected_df = er_result_df[er_result_df['n nodes'] == n_nodes]
             plt.plot(selected_df['bias prob'], 
-                    selected_df['consensus time mean'], label=f'{type_of_graph}')
+                    selected_df['consensus time mean'], label = f'N nodes = {n_nodes}')
             plt.errorbar(selected_df['bias prob'], selected_df['consensus time mean'], 
-                        yerr=[selected_df['consensus time mean'] - selected_df['interval low'],
-                            selected_df['interval up'] - selected_df['consensus time mean']],
+                        yerr=[selected_df['consensus time mean'] - selected_df['time interval low'],
+                            selected_df['time interval up'] - selected_df['consensus time mean']],
                         fmt='o', capsize=5, c='black', zorder=1)
+        plt.xticks(er_result_df['bias prob'].unique())    
         plt.xlabel('Biases')
         plt.ylabel('Times')
-        plt.title(f'Biases vs average time to reach consensus with n = {n_nodes}')
-        plt.legend()
+        plt.title(f'Biases vs average time to reach consensus in ER graph')
         plt.grid(True)
-        file_name = os.path.join(folder_path, f'times_n_{n_nodes}.')
+        plt.legend()
+        file_name = os.path.join(folder_path, f'er_times.')
         plt.savefig(file_name, dpi=300, bbox_inches='tight')
-        #plt.show()
         
         plt.figure(figsize=(12,8))
-        for type_of_graph in subset_df['type of graph'].unique():
-            selected_df = subset_df[subset_df['type of graph'] == type_of_graph]
-            plt.plot(selected_df['bias prob'], selected_df['plus'] / selected_df['n runs'], label=f'Graph {type_of_graph}', marker='o')
-        plt.xlabel('Biases')
-        plt.ylabel('Consensus percentages')
-        plt.legend()
+        for n_nodes in er_result_df["n nodes"].unique():
+            selected_df = er_result_df[er_result_df['n nodes'] == n_nodes]
+            plt.plot(selected_df['bias prob'], selected_df['consensus prob mean'], label=f'N nodes = {n_nodes}')
+            plt.errorbar(selected_df['bias prob'], selected_df['consensus prob mean'], 
+                    yerr=[selected_df['consensus prob mean'] - selected_df['consensus interval low'],
+                        selected_df['consensus interval up'] - selected_df['consensus prob mean']],
+                    fmt='o', capsize=5, c='black', zorder=1)
+        plt.xlabel('Bias probability')
+        plt.xticks(er_result_df['bias prob'].unique())
+        plt.ylabel('+1 probability')
+        plt.title(f'Bias prob vs +1 probability in ER graph')
         plt.grid(True)
-        plt.title(f'Biases in the graph vs consensus percentages with n = {n_nodes}')
-        file_name = os.path.join(folder_path, f'consensus_n_{n_nodes}.')
+        plt.legend()
+        file_name = os.path.join(folder_path, f'er_consensus.')
         plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        
+    if 'Z2' in types_of_graph or 'Z3' in types_of_graph:
+        z_result_df = results_df[results_df['type of graph'] != 'ER']
+        bias_prob = z_result_df["bias prob"].unique()[0]
+        
+        plt.figure(figsize=(12,8))
+        for type_of_graph in z_result_df['type of graph'].unique():
+            selected_df = z_result_df[z_result_df['type of graph'] == type_of_graph]
+            plt.plot(selected_df['n nodes'], selected_df['consensus time mean'], label=f'Graph {type_of_graph}')
+            plt.errorbar(selected_df['n nodes'], selected_df['consensus time mean'], 
+                    yerr=[selected_df['consensus time mean'] - selected_df['time interval low'],
+                        selected_df['time interval up'] - selected_df['consensus time mean']],
+                    fmt='o', capsize=5, c='black', zorder=1)
+        plt.xlabel('Number of nodes')
+        plt.xticks(z_result_df['n nodes'].unique())
+        plt.ylabel('Time to reach consensus (units of time)')
+        plt.title(f'Number of node vs average time to reach consensus with bias prob = {bias_prob}')
+        plt.grid(True)
+        plt.legend()
+        file_name = os.path.join(folder_path, f'z_times_bias_{bias_prob}.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        
+        plt.figure(figsize=(12,8))
+        for type_of_graph in z_result_df['type of graph'].unique():
+            selected_df = z_result_df[z_result_df['type of graph'] == type_of_graph]
+            plt.plot(selected_df['n nodes'], selected_df['consensus prob mean'], label=f'Graph {type_of_graph}')
+            plt.errorbar(selected_df['n nodes'], selected_df['consensus prob mean'], 
+                    yerr=[selected_df['consensus prob mean'] - selected_df['consensus interval low'],
+                        selected_df['consensus interval up'] - selected_df['consensus prob mean']],
+                    fmt='o', capsize=5, c='black', zorder=1)
+        plt.xlabel('Number of nodes')
+        plt.xticks(z_result_df['n nodes'].unique())
+        plt.ylabel('+1 probability')
+        plt.title(f'Number of node vs +1 probability with bias prob = {bias_prob}')
+        plt.grid(True)
+        plt.legend()
+        file_name = os.path.join(folder_path, f'z_consensus_bias_{bias_prob}.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')    
 
-def plot_graph_single(datas, n, p, type_of_graph, folder_path):
-    
-    consensus = [data[3] for data in datas]
-    times = [data[0] for data in datas]
-    intervals = [data[1] for data in datas]
-    biases = [data[2] for data in datas]
-    
-    plt.figure(figsize=(12,8))
-    plt.plot(biases, times, label='Time', c='b')
-    plt.errorbar(biases, times, yerr=[[t-interval[0] for t,interval in zip(times,intervals)],
-                                    [interval[1]-t for t,interval in zip(times,intervals)]],
-                 fmt='o', capsize=5, c='b', zorder=1)
-    plt.xlabel('Biases')
-    plt.ylabel('Times')
-    plt.grid(True)
-    title_str = f'Biases in the graph vs time for the consensus - Graph {type_of_graph} (n={n}'
-    if type_of_graph == 'ER': title_str += f', p={p}'
-    title_str += ')'
-    plt.title(title_str)
-    file_str = f'{type_of_graph}_n_{n}'
-    if type_of_graph == 'ER': file_str += f'_p_{p}'
-    file_str += '_times.'
-    file_name = os.path.join(folder_path, file_str)
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.close()
-    
-    plt.figure(figsize=(12,8))
-    plt.plot(biases, consensus, marker='o')
-    plt.xlabel('Biases')
-    plt.ylabel('Consensus percentages')
-    plt.grid(True)
-    title_str = f'Biases in the graph vs consensus percentages - Graph {type_of_graph} (n={n}'
-    if type_of_graph == 'ER': title_str += f', p={p}'
-    title_str += ')'
-    plt.title(title_str)
-    file_str = f'{type_of_graph}_n_{n}'
-    if type_of_graph == 'ER': file_str += f'_p_{p}'
-    file_str += '_consensus.'
-    file_name = os.path.join(folder_path, file_str)
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.close()
-    #plt.show()
-
+#-----------------------------------------------------------------------------------------------------------#
+# SIMULATION ON A SINGLE GRAPH
+#
+#
 def simulate(g, max_component):
     FES = PriorityQueue()
     for node in list(g.keys()):
         if node not in max_component:
             g.pop(node)
-    lam = len(g) # wake-up process for each node follows poisson(lam = 1) distr , 
-    # so the whole graph follows poisson(lam = n_nodes)
-    #lam = 1
+    # wake-up process for each node follows poisson(lam = 1) distr ,
+    lam = len(g) # so the whole graph follows poisson(lam = n_nodes)
     keys = list(g.keys())
     
     current_i = random.choice(keys)
-    time = 0
+    sim_time = 0
     
-    #FES.put((time, random_index))
-    
-    """if not args.parallelization:
-        pbar = tqdm(total=args.sim_time,
-                        desc=f'Simulating sim_time = {args.sim_time}',
-                        bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}]')
-    """
     plus = sum(g[node]['state'] == 1 for node in max_component)
     minus = sum(g[node]['state'] == -1 for node in max_component)
     
     while True:
-    
-        #new_time, current_i = FES.get()
-    
-        """if not args.parallelization:
-            if new_time <= args.sim_time: # to prevent a warning to appear
-                pbar.update(new_time - time)
-            else:
-                pbar.update(args.sim_time - time)"""
         
         if args.verbose:
             print(f'Plus: {plus}, minus: {minus}'.ljust(21), end='\r')
                 
-        #time = new_time
         current = g[current_i]
         neighbors = current['neighbors']
         if neighbors:
@@ -331,53 +308,11 @@ def simulate(g, max_component):
                     minus+=1
                     plus-=1
         
-        #data.append((time, plus, minus))
-        
         if plus == len(max_component) or minus == len(max_component):
-            return time, plus == len(max_component)
+            return sim_time, plus == len(max_component)
         
-        time += random.expovariate(lam)
+        sim_time += random.expovariate(lam)
         current_i = random.choice(keys)
-
-def run_simulation(params, type_of_graph):
-    choices = [1,-1]
-    n, p, prob = params
-    
-    # this ensure that each process will be different from the other
-    if args.parallelization:
-        seed = (os.getpid() * int(time.time())) % random.randint(0, 1_000_000)
-    
-    #random.seed(seed)
-    #np.random.seed(seed)
-    
-    if type_of_graph == 'ER':
-        g = generate_graph_ER(n, p, choices, prob)
-    elif type_of_graph == 'Z2':
-        g = generate_z2(n, choices, prob)
-    else:
-        g = generate_z3(n, choices, prob)          
-    #qq_plot(g,p)
-    #chi_squared_test(g, p)
-    
-    giant_component = get_giant_component(g)
-    
-    if args.verbose:
-        if len(giant_component) == len(g):
-            print(f'This graph is connected')
-        else:
-            print(f'The giant component of this graph has {len(giant_component)} nodes')
-    
-    start_time = time.time()
-    result = simulate(g, giant_component)
-    #plot_graph(data, n, p, prob)
-    if args.verbose:
-        if result is None:
-            print(f'This graph did not reach consensus under the max simulation time')
-        else:
-            t, _ = result
-            print(f'This graph reached consensus in {t:.2f} units of time')
-        print(f'The simulation took: {time.time() - start_time:.2f}s ({(time.time() - start_time) / 60:.2f}min)')
-    return result
 
 # -------------------------------------------------------------------------------------------------------#
 # CONDIFENCE INTERVAL METHOD
@@ -401,6 +336,87 @@ def calculate_confidence_interval(data, conf):
     acc = 1 - re # this is the accuracy
     return mean,interval,acc
 
+#-----------------------------------------------------------------------------------------------------------#
+# FUNCTION THAT PREPARE THE SIMULATION
+#
+#
+def run_simulation(params, type_of_graph):
+    choices = [1,-1]
+    n, p, prob = params
+    n_sim = args.n_sim
+    
+    print_str = f'Generating and simulating at least {n_sim} graphs {type_of_graph} (n={n}'
+    
+    if type_of_graph == 'ER': print_str += f',p={p}'
+    print_str += f') and bias={bias}'
+    print(print_str)
+    print('-----------------------')
+    
+    start_time = time.time()
+    
+    time_datas, cons_datas = [],[] # store result data for this iteration
+    time_acc, cons_acc, i, plus = 0,0,0,0
+    # continue to run simulations until a accettable accuracy is reached
+    while (time_acc < args.accuracy_threshold and cons_acc < args.accuracy_threshold) or i < n_sim:
+        if type_of_graph == 'ER':
+            g = generate_graph_ER(n, p, choices, prob)
+        elif type_of_graph == 'Z2':
+            g = generate_z2(n, choices, prob)
+        else:
+            g = generate_z3(n, choices, prob)
+            
+        giant_component = get_giant_component(g)
+        
+        if args.verbose:
+            if len(giant_component) == len(g):
+                print(f'This graph is connected')
+            else:
+                print(f'The giant component of this graph has {len(giant_component)} nodes')
+                              
+        if args.verbose: print(f'Graph {i+1}:')
+        result = simulate(g, giant_component)
+        
+        if args.verbose:
+            t, _ = result
+            print(f'This graph reached consensus in {t:.2f} units of time')
+            print(f'The simulation took: {time.time() - start_time:.2f}s ({(time.time() - start_time) / 60:.2f}min)')
+        
+        if result is not None:
+            consensus_time, consensus = result
+            if consensus:
+                plus += 1
+            if i != 0: cons_datas.append((plus/i))
+            time_datas.append(consensus_time)
+        
+        # calculate confidence level each n_sim iteration
+        if len(time_datas) > 1 and i % n_sim == 0:
+            time_mean, time_interval, time_acc = calculate_confidence_interval(time_datas, conf=args.confidence_level)
+            if len(cons_datas) > 1:
+                cons_mean, cons_interval, cons_acc = calculate_confidence_interval(cons_datas, conf=args.confidence_level)
+            if args.verbose: print(f'Accuracy: {time_acc}')
+        
+        i+=1
+        if args.verbose: print('-----------------------')
+        
+    result = {
+        'type of graph': type_of_graph,
+        'n nodes': n,
+        'edge prob': p,
+        'bias prob': bias,
+        'consensus time mean': time_mean,
+        'accuracy': time_acc,
+        'time interval low': time_interval[0],
+        'time interval up': time_interval[1],
+        'consensus prob mean': cons_mean,
+        'consensus interval low': cons_interval[0],
+        'consensus interval up': cons_interval[1],
+        'plus': plus,
+        'n runs': i
+    }    
+    print(f'Number of simulation: {i}')
+        
+    return result
+
 if __name__ == '__main__':
     
     random.seed(42)
@@ -417,77 +433,45 @@ if __name__ == '__main__':
         
     print(f'Output images will be saved in the folder: {folder_path}')
         
-    n_sim = args.n_sim
-    parameters = [(n, 10/n) for n in args.n_nodes]
     final_results = []
     
+    types = list(args.types_of_graph)
     # -------------------------------------------------------------------------------------------------------#
-    # VOTER MODEL
+    # VOTER MODEL ER GRAPH
     #
     #
-    for type_of_graph in args.types_of_graph:
-        for n,p in parameters:
-            all_datas = []
-            for bias in BIAS_PROB:
-                datas = []
+    if 'ER' in types:
+        for n in args.n_nodes_er:
+            p = 10/n
+            for bias in BIAS_PROB: # runs simulation for each bias probability input parameters
                 param = n,p,bias
-                if args.parallelization:
-                    if bias == .5:
-                        print(f'Generating and simulating in parallel {n_sim} graphs {type_of_graph}(n={n},p={p}) and no bias')
-                    else:
-                        print(f'Generating and simulating in parallel {n_sim} graphs {type_of_graph}(n={n},p={p}) and bias={bias}')
-                else:
-                    print_str = f'Generating and simulating sequentially at least {n_sim} graphs {type_of_graph}'
-                    
-                    if type_of_graph == 'ER': print_str += f'(n={n},p={p})'
-                    else: print_str += f'(n={n})'
-                    
-                    if bias == .5: print_str += ' and no bias'
-                    else: print_str += f' and bias={bias}'
-                    print(print_str)
-                print('-----------------------')
                 
+                result = run_simulation(param, type_of_graph='ER')
                 
-                acc, i, plus = 0,0,0
-                while acc < args.accuracy_threshold or i < n_sim:
-                    if args.parallelization:
-                        with Pool(n_sim) as pool:
-                            results = pool.map(run_simulation, [param]*n_sim)
-                            datas.append([t for t,_ in results])
-                            plus += sum(1 for _,consensus in results if consensus)
-                    else:
-                        if args.verbose: print(f'Graph {i+1}:')
-                        result = run_simulation(param, type_of_graph)
-                        if result is not None:
-                            consensus_time, consensus = result
-                            datas.append(consensus_time)
-                        if consensus:
-                            plus += 1
-                    if len(datas) > 1 and i % n_sim == 0:
-                        mean, interval, acc = calculate_confidence_interval(datas, conf=args.confidence_level)
-                        if args.verbose: print(f'Accuracy: {acc}')
-                    
-                    i+=1
-                    if args.verbose: print('-----------------------')
-                    
-                result = {
-                    'type of graph': type_of_graph,
-                    'n nodes': n,
-                    'edge prob': p if type_of_graph == 'ER' else None,
-                    'bias prob': bias,
-                    'consensus time mean': mean,
-                    'accuracy': acc,
-                    'interval low': interval[0],
-                    'interval up': interval[1],
-                    'plus': plus,
-                    'n runs': i
-                }
-                final_results.append(pd.DataFrame([result]))
-                print(f'Number of simulation: {i}')
-                all_datas.append((mean,interval,bias,(plus/i)))
-                #plot_graph(datas, n, p, bias, folder_path)
-            plot_graph_single(all_datas, n, p, type_of_graph, folder_path)
+                # store the results into final_results lst for the final dataframe
+                final_results.append(pd.DataFrame([result]))         
+        
+        types.remove('ER') # remove this type of graph from the input list of graph to simulate
+        
+    # -------------------------------------------------------------------------------------------------------#
+    # VOTER MODEL Z^2 and Z^3 GRAPH
+    #
+    #
+    for type_of_graph in types:
+        for n in args.n_nodes_z:
+            bias = BIAS_PROB[0] # it is .51
+            param = (n,None,bias)
+            
+            result = run_simulation(param, type_of_graph=type_of_graph)
+            final_results.append(pd.DataFrame([result]))
+    
+    # -------------------------------------------------------------------------------------------------------#
+    # STORE AND PLOT THE FINAL DATA
+    #
+    # store the data into a dataframe to save it into a csv file
     final_df = pd.concat(final_results, ignore_index=True)
-    plot_graph_generally(final_df, folder_path)
+    
+    # plot graph for the whole simulation process to produce some confront
+    plot_graph(final_df, folder_path)
             
     print('\n---------------------------------------------------------------------------------------------------------\n')
