@@ -18,17 +18,16 @@
 
 """
     Duration p_values simulations E-R graph with seed = 42: 
-    n = 1000 ~ 2min
-    n = 3000 ~ 20min
-    n = 4000 ~ 1h
-    n = 6000 ~ 1h 50min
+    n = 1000 ~ 3min -> 40 simulations ~ 5s each sim 
+    n = 3000 ~ 20min -> 46 simulations ~ 26s each sim
+    n = 4000 ~ 1h -> 146 simulations ~ 25s each sim
+    n = 6000 ~ 1h 50min -> 90 simulations ~ 73s each sim
 """
 
-from queue import PriorityQueue, Queue
+from queue import Queue
 import random
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.stats as stats
 import os
 import time
 import argparse
@@ -62,45 +61,6 @@ parser.add_argument('--verbose', action='store_true',
                     help='To see the consensus sum of the nodes')
 parser.add_argument('--seed', type=int, default=42, 
                     help='For reproducibility reasons')
-
-def degree_of(node):
-    return len(node['neighbors'])
-
-def qq_plot(g,p):
-    n = len(g)
-    lam = (n-1)*p
-    degrees = np.array([degree_of(g[node]) for node in g])
-    
-    probplot_data = stats.probplot(degrees, dist=stats.poisson(lam), plot=plt)
-    
-    plt.title('Q-Q Plot for Poisson Distribution')
-    plt.xlabel('Theoretical Quantiles')
-    plt.ylabel('Sample Quantiles')
-    plt.grid(True)
-    plt.show()
-
-def chi_squared_test(g, p):
-    n = len(g)
-    lam = (n-1)*p
-    degrees = np.array([degree_of(g[node]) for node in g])
-    
-    x = np.unique(degrees)
-    observed, _ = np.histogram(degrees, bins=x, density=True)
-    df = len(x) -1
-    x = x[:-1]
-    expected = stats.poisson.pmf(x, lam)
-    
-    chi2_stat = np.sum((observed - expected)**2 / expected)
-    p_value = 1 - stats.chi2.pdf(chi2_stat, df)
-    print(f'chi_stat = {chi2_stat:.4f} - p_value = {p_value}')
-    
-    plt.figure(figsize=(12,8))
-    plt.title('Observed and expected frequencies')
-    plt.hist(degrees, bins=np.unique(degrees), alpha=.5, label='Observed', density=True)
-    #plt.hist(expected, bins=x, alpha=.5, label='Expected', density=True)
-    plt.plot(x, expected, color='r', label='Expected pdf (Poisson)')
-    plt.legend()
-    plt.show()
 
 #-----------------------------------------------------------------------------------------------------------#
 #  BREADTH-FIRST SEARCH ALGORITHM
@@ -144,10 +104,17 @@ def get_giant_component(g):
 #
 #
 def generate_z2(n, choices: list, prob):
-    dim = int(np.ceil(n ** (1/2))) # this ensure that at least n nodes are generated
+    dim = int(np.ceil(n ** (1/2))) # dimension for a squared grid equal or larger than n nodes
+    
+    # GENERATE THE NODES
+    # each one is a nested dict and it can be access by a pair that represent the coordinates
+    #
     g = {(x,y): {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []}\
         for x in range(dim) for y in range(dim)}
     
+    # GENERATE THE EDGES
+    # connect the next indexes (the previous will be already connected)
+    #
     for x in range(dim):
         for y in range(dim):
             if x+1 < dim:
@@ -163,10 +130,17 @@ def generate_z2(n, choices: list, prob):
 #
 #
 def generate_z3(n, choices:list, prob):
-    dim = int(np.ceil(n ** (1/3))) # this ensure that at least n nodes are generated
+    dim = int(np.ceil(n ** (1/3))) # dimension for a cubic grid equal or larger than n nodes
+    
+    # GENERATE THE NODES
+    # each one is a nested dict and it can be access by a triple that represent the coordinates
+    #
     g ={(x,y,z): {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []}\
         for x in range(dim) for y in range (dim) for z in range(dim)}
     
+    # GENERATE THE EDGES
+    # connect the next indexes (the previous will be already connected)
+    #
     for x in range(dim):
         for y in range(dim):
             for z in range(dim):
@@ -186,9 +160,17 @@ def generate_z3(n, choices:list, prob):
 #
 #
 def generate_graph_ER(n, p, choices: list, prob):
+    
+    # GENERATE THE NODES
+    # each one is a nested dict and it can be access by a single index
+    #
     g = {node: {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []} for node in range(n)}    
     
-    # this calculate the differences between num_nodes and p to see if they differ at least of FACTOR_OF_10 factors of ten
+    # GENERATE THE EDGES - two possible methods based on the differences between n_nodes and edge probability
+    # method 1 -> calculate the expected number of edges (m), create the edges between random nodes
+    # method 2 -> iterate over all the nodes and links them if a Bernulli experiment succeds
+    #
+    # this calculate the differences between num_nodes and p to see if they differ by at least FACTOR_OF_10
     if abs(int(np.log10(p)) - int(np.log10(n))) >= args.factor_of_10: # it means p is sufficiently small
         m = int((p*n*(n-1)) // 2) # expected number of edges
         
@@ -202,15 +184,12 @@ def generate_graph_ER(n, p, choices: list, prob):
                     g[i]['neighbors'].append(j)
                     g[j]['neighbors'].append(i)
                     break
-    else:
-        bar_format='{l_bar}{bar:30}{n:.0f}/{total} nodes [{elapsed}<{remaining}, {rate_fmt}]'
-        
+    else:        
         for i in range(n): # O(n)
             for j in range(i + 1, n): # O(log(n))
                 if random.random() < p:
                     g[i]['neighbors'].append(j)
-                    g[j]['neighbors'].append(i)
-    
+                    g[j]['neighbors'].append(i)    
     return g
 
 #-----------------------------------------------------------------------------------------------------------#
@@ -303,20 +282,32 @@ def plot_graph(results_df, folder_path):
 # SIMULATION ON A SINGLE GRAPH
 #
 #
-def simulate(g, max_component):
-    FES = PriorityQueue()
+def simulate(g: dict, max_component: set):
+    
+    # REMOVE all the nodes that are not part of the giant component
+    #
     for node in list(g.keys()):
         if node not in max_component:
             g.pop(node)
+
     # wake-up process for each node follows poisson(lam = 1) distr ,
     lam = len(g) # so the whole graph follows poisson(lam = n_nodes)
-    keys = list(g.keys())
     
-    current_i = random.choice(keys)
-    sim_time = 0
+    keys = list(g.keys()) # indexes of the nodes
     
+    # VARIABLES ASSOCIATED WITH A WAKE UP EVENTS
+    # I removed the FES for computational reasons, it is no necessary to use a PriorityQueue()
+    # in this case since each time only a single event can follow another one
+    #
+    current_i = random.choice(keys) # pick a random index is more optimized that sampling from a dict 
+    sim_time = 0 # simulation starts from 0
+    
+    # CONSENSUS VARIABLES
+    #
     plus = sum(g[node]['state'] == 1 for node in max_component)
     minus = sum(g[node]['state'] == -1 for node in max_component)
+    
+    start_time = time.time()
     
     while True:
         
@@ -325,12 +316,19 @@ def simulate(g, max_component):
                 
         current = g[current_i]
         neighbors = current['neighbors']
+        
+        #-----------------------------------------------------------------------------------------#
+        # VOTER MODEL
+        # each time a node wakes up, it change its state variable coping the state
+        # variable of one random neighbors
+        #
         if neighbors:
-            random_neighbor = random.choice(neighbors)
+            random_neighbor = random.choice(neighbors) # random neighbors (each one is an index)
         
             previous_state = current['state']
             current['state'] = g[random_neighbor]['state']
             
+            # update consensus variables
             if current['state'] != previous_state:
                 if current['state'] == 1:
                     plus+=1
@@ -338,10 +336,17 @@ def simulate(g, max_component):
                 else:
                     minus+=1
                     plus-=1
-        
+                    
+        # If consensus is reached -> return
+        #
         if plus == len(max_component) or minus == len(max_component):
+            if args.verbose:
+                print(f'Consensus reached in {time.time() - start_time:.2f}s ({(time.time() - start_time) / 60:.2f}min)')
+                print('-----------------------')
+            
             return sim_time, plus == len(max_component)
         
+        # otherwise, generate next wake up event
         sim_time += random.expovariate(lam)
         current_i = random.choice(keys)
 
@@ -372,7 +377,9 @@ def calculate_confidence_interval(data, conf):
 #
 #
 def run_simulation(params, type_of_graph):
-    choices = [1,-1]
+    
+    choices = [1,-1] # possible state variables for the nodes 
+    
     n, p, prob = params
     n_sim = args.n_sim
     
@@ -383,7 +390,7 @@ def run_simulation(params, type_of_graph):
     print(print_str)
     print('-----------------------')
     
-    start_time = time.time()
+    sim_start_time = time.time()
     
     time_datas, cons_datas = [],[] # store result data for this iteration
     time_acc, cons_acc, i, plus = 0,0,0,0
@@ -399,20 +406,16 @@ def run_simulation(params, type_of_graph):
         giant_component = get_giant_component(g)
         
         if args.verbose:
+            print(f'Graph {i+1}:')
             if len(giant_component) == len(g):
                 print(f'This graph is connected')
             else:
-                print(f'The giant component of this graph has {len(giant_component)} nodes')
-                              
-        if args.verbose: print(f'Graph {i+1}:')
+                print(f'The giant component of this graph has {len(giant_component)} nodes ' \
+                    + f'({len(giant_component) / len(g) * 100:.2f}% of the whole graph)')
+        
         result = simulate(g, giant_component)
         
         i+=1
-        
-        if args.verbose:
-            t, _ = result
-            print(f'This graph reached consensus in {t:.2f} units of time')
-            print(f'The simulation took: {time.time() - start_time:.2f}s ({(time.time() - start_time) / 60:.2f}min)')
         
         if result is not None:
             consensus_time, consensus = result
@@ -426,9 +429,12 @@ def run_simulation(params, type_of_graph):
             time_mean, time_interval, time_acc = calculate_confidence_interval(time_datas, conf=args.confidence_level)
             if len(cons_datas) > 1:
                 cons_mean, cons_interval, cons_acc = calculate_confidence_interval(cons_datas, conf=args.confidence_level)
-            if args.verbose: print(f'Accuracy: {time_acc}')
-        
-        if args.verbose: print('-----------------------')
+    
+    if args.verbose:
+        print(f'The simulation took: {time.time() - sim_start_time:.2f}s ({(time.time() - sim_start_time) / 60:.2f}min)')
+        print(f'Number of simulation: {i}')
+        print(f'Time Accuracy: {time_acc:.4f} - Consensus accuracy: {cons_acc:.4f}')
+        print('-----------------------')
         
     result = {
         'type of graph': type_of_graph,
@@ -445,7 +451,7 @@ def run_simulation(params, type_of_graph):
         'consensus interval up': cons_interval[1],
         'plus': plus,
         'n runs': i
-    }    
+    }
     print(f'Number of simulation: {i}')
         
     return result
@@ -483,7 +489,7 @@ if __name__ == '__main__':
     types = list(args.types_of_graph)
     
     # -------------------------------------------------------------------------------------------------------#
-    # VOTER MODEL ER RANDOM GRAPH
+    # ER RANDOM GRAPH
     #
     #
     if 'ER' in types:
@@ -500,7 +506,7 @@ if __name__ == '__main__':
         types.remove('ER') # remove ER graph from the input list to simulate only the Zs graphs after
         
     # -------------------------------------------------------------------------------------------------------#
-    # VOTER MODEL Z^2 and Z^3 GRAPH
+    # Z^2 and Z^3 GRAPH
     #
     #
     for type_of_graph in types:
@@ -520,4 +526,4 @@ if __name__ == '__main__':
     # save and plot graph for the whole simulation process to produce some analisys
     plot_graph(final_df, folder_path)
             
-    print('\n---------------------------------------------------------------------------------------------------------\n')
+    print('\n--------------------------------------------------------------------------------------------\n')
