@@ -32,13 +32,12 @@ import pandas as pd
 # INPUT PARAMETERS
 #
 #
-#
 parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
-parser.add_argument('--n_nodes_er', type=int, default=[1000, 3000], nargs='+',
-                    help='Number of nodes in the graph to simulate')
-parser.add_argument('--n_nodes_z', type=int, default=[100, 200, 400, 600, 800, 1000], nargs='+',
-                    help='Number of nodes to simulate for the Z^2 and Z^3 graph')
+parser.add_argument('--n_nodes_er', type=int, default=[1000, 4000], nargs='+',
+                    help='Number of nodes to simulate for the ER graph (it can be more than one value)')
+parser.add_argument('--n_nodes_z', type=int, default=[100, 300, 500, 700, 900], nargs='+',
+                    help='Number of nodes to simulate for the Z^2 and Z^3 graph (it should be more than one value)')
 parser.add_argument('--types_of_graph', type=str, default=['ER','Z2','Z3'], nargs='+',
                     choices=['ER', 'Z2', 'Z3'], help='Type of graph to simulate')
 parser.add_argument('--n_sim', type=int, default=6,
@@ -51,8 +50,8 @@ parser.add_argument('--confidence_level', type=float, default=.8,
                     help='Value of confidence we want for the accuracy calculation')
 parser.add_argument('--verbose', action='store_true',
                     help='To see the consensus sum of the nodes')
-
-SEEDS = [643522, 308619,  90445, 473637, 564870, 910011]
+parser.add_argument('--seed', type=int, default=42, 
+                    help='For reproducibility reasons')
 
 BIAS_PROB = [.51, .55, .6, .7]
 
@@ -94,7 +93,11 @@ def chi_squared_test(g, p):
     plt.plot(x, expected, color='r', label='Expected pdf (Poisson)')
     plt.legend()
     plt.show()
-    
+
+#-----------------------------------------------------------------------------------------------------------#
+#  BREADTH-FIRST SEARCH ALGORITHM
+#
+#
 def BFS(g, start):
     queue = Queue()
     visited = set()
@@ -113,6 +116,10 @@ def BFS(g, start):
                 queue.put(neighbor)
     return visited
 
+#-----------------------------------------------------------------------------------------------------------#
+#  GIANT COMPONENT SEARCH
+#
+#
 def get_giant_component(g):
     max_component = None
     visited = set()
@@ -124,6 +131,10 @@ def get_giant_component(g):
                 max_component = component
     return max_component
 
+#-----------------------------------------------------------------------------------------------------------#
+#  Z^2 GRAPH GENERATION
+#
+#
 def generate_z2(n, choices: list, prob):
     dim = int(np.ceil(n ** (1/2))) # this ensure that at least n nodes are generated
     g = {(x,y): {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []}\
@@ -139,6 +150,10 @@ def generate_z2(n, choices: list, prob):
                 g[(x,y+1)]['neighbors'].append((x,y))
     return g
 
+#-----------------------------------------------------------------------------------------------------------#
+#  Z^3 GRAPH GENERATION
+#
+#
 def generate_z3(n, choices:list, prob):
     dim = int(np.ceil(n ** (1/3))) # this ensure that at least n nodes are generated
     g ={(x,y,z): {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []}\
@@ -158,6 +173,10 @@ def generate_z3(n, choices:list, prob):
                     g[(x,y,z+1)]['neighbors'].append((x,y,z))
     return g
 
+#-----------------------------------------------------------------------------------------------------------#
+#  ERDOS-RENYI GRAPH GENERATION
+#
+#
 def generate_graph_ER(n, p, choices: list, prob):
     g = {node: {'state': np.random.choice(choices, p=[prob, 1-prob]), 'neighbors': []} for node in range(n)}    
     
@@ -186,6 +205,10 @@ def generate_graph_ER(n, p, choices: list, prob):
     
     return g
 
+#-----------------------------------------------------------------------------------------------------------#
+#  PLOT RESULTS
+#
+#
 def plot_graph(results_df, folder_path):
     file_name = os.path.join(folder_path, 'results.csv')
     results_df.to_csv(file_name)
@@ -419,13 +442,17 @@ def run_simulation(params, type_of_graph):
         
     return result
 
+#-----------------------------------------------------------------------------------------------------------#
+# MAIN METHOD
+#
+#
 if __name__ == '__main__':
-    
-    random.seed(42)
-    np.random.seed(42)
     
     args = parser.parse_args()
     print(f'Input parameters: {vars(args)}')
+    
+    random.seed(args.seed)
+    np.random.seed(args.seed)
     
     script_directory = os.path.dirname(os.path.abspath(__file__))
     current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
