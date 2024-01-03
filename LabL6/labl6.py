@@ -16,6 +16,14 @@
     https://www.dropbox.com/request/aoHu1HOIlLVeYlgFbc6U
 """
 
+"""
+    Duration p_values simulations E-R graph with seed = 42: 
+    n = 1000 ~ 2min
+    n = 3000 ~ 20min
+    n = 4000 ~ 1h
+    n = 6000 ~ 1h 50min
+"""
+
 from queue import PriorityQueue, Queue
 import random
 import numpy as np
@@ -38,6 +46,8 @@ parser.add_argument('--n_nodes_er', type=int, default=[1000, 4000], nargs='+',
                     help='Number of nodes to simulate for the ER graph (it can be more than one value)')
 parser.add_argument('--n_nodes_z', type=int, default=[100, 300, 500, 700, 900], nargs='+',
                     help='Number of nodes to simulate for the Z^2 and Z^3 graph (it should be more than one value)')
+parser.add_argument('--bias_prob', type=float, default=[.51, .55, .6, .7], nargs='+',
+                    help='Probabilities p_1 of being in state +1 for each node (it should be more than one)')
 parser.add_argument('--types_of_graph', type=str, default=['ER','Z2','Z3'], nargs='+',
                     choices=['ER', 'Z2', 'Z3'], help='Type of graph to simulate')
 parser.add_argument('--n_sim', type=int, default=6,
@@ -52,8 +62,6 @@ parser.add_argument('--verbose', action='store_true',
                     help='To see the consensus sum of the nodes')
 parser.add_argument('--seed', type=int, default=42, 
                     help='For reproducibility reasons')
-
-BIAS_PROB = [.51, .55, .6, .7]
 
 def degree_of(node):
     return len(node['neighbors'])
@@ -451,9 +459,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
     print(f'Input parameters: {vars(args)}')
     
+    # SET THE SEED
+    #
     random.seed(args.seed)
     np.random.seed(args.seed)
     
+    # CREATE OUTPUT FOLDER
+    #
     script_directory = os.path.dirname(os.path.abspath(__file__))
     current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
     folder_path = os.path.join(script_directory, 'outputs',current_time)
@@ -462,17 +474,22 @@ if __name__ == '__main__':
         
     print(f'Output images will be saved in the folder: {folder_path}')
         
+    # FINAL OUTPUT
+    #
     final_results = []
     
+    # TYPES OF GRAPH TO SIMULATE IN THIS RUN
+    #
     types = list(args.types_of_graph)
+    
     # -------------------------------------------------------------------------------------------------------#
-    # VOTER MODEL ER GRAPH
+    # VOTER MODEL ER RANDOM GRAPH
     #
     #
     if 'ER' in types:
         for n in args.n_nodes_er:
             p = 10/n
-            for bias in BIAS_PROB: # runs simulation for each bias probability input parameters
+            for bias in args.bias_prob: # runs simulation for each bias probability input parameters
                 param = n,p,bias
                 
                 result = run_simulation(param, type_of_graph='ER')
@@ -480,7 +497,7 @@ if __name__ == '__main__':
                 # store the results into final_results lst for the final dataframe
                 final_results.append(pd.DataFrame([result]))         
         
-        types.remove('ER') # remove this type of graph from the input list of graph to simulate
+        types.remove('ER') # remove ER graph from the input list to simulate only the Zs graphs after
         
     # -------------------------------------------------------------------------------------------------------#
     # VOTER MODEL Z^2 and Z^3 GRAPH
@@ -488,19 +505,19 @@ if __name__ == '__main__':
     #
     for type_of_graph in types:
         for n in args.n_nodes_z:
-            bias = BIAS_PROB[0] # it is .51
+            bias = .51
             param = (n,None,bias)
             
             result = run_simulation(param, type_of_graph=type_of_graph)
             final_results.append(pd.DataFrame([result]))
     
     # -------------------------------------------------------------------------------------------------------#
-    # STORE AND PLOT THE FINAL DATA
+    # STORE, SAVE AND PLOT THE FINAL DATA
     #
     # store the data into a dataframe to save it into a csv file
     final_df = pd.concat(final_results, ignore_index=True)
     
-    # plot graph for the whole simulation process to produce some confront
+    # save and plot graph for the whole simulation process to produce some analisys
     plot_graph(final_df, folder_path)
             
     print('\n---------------------------------------------------------------------------------------------------------\n')
