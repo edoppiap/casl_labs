@@ -2,3 +2,12 @@
 /**/__pycache__
 /**/other_people
 /**/outputs
+
+*.ipynb
+
+*.aux
+*.lof
+*.fls
+*.log
+*.synctex.gz
+*.fdb_latexmk
