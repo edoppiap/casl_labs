@@ -47,68 +47,77 @@ This paper presents different simulations of the \textit{Voter Model} on random 
 
 \section{Problem overview}
 
-%Random graphs are a special type of graph that can be described by a probability distribution, or random process, that generates them. 
+The Voter Model is a mathematical model that describes a dynamic process.
 %
-%Their number of edges depends on a stochastic process starting from a given number of nodes. 
+It models the evolution of opinions in a group of people.  
 %
-%The process involves connecting random nodes with an edge based on probability. 
+As we simulate the Voter Model on to a graph, each node of the graph represents an individual and the edges between nodes represent the connection that each person has with the others.
+
+This model suits the situation where there are two different opinions and individuals can be influenced by what their connections think about them. 
 %
-%The most important and widely used model describing this type of graph is called the \textbf{Erdős-Rényi model}.
+The opinion that a person has is represented by a state variable that can take two values: $ x_v(t) \in \{-1,1\}$.
+%
+The change in opinion is modelled as an event where a node wakes up and changes its state variable by copying the state variable of one of its neighbours, following the formula:
+
+\begin{center}
+    \begin{math}
+        x_v(t_v^+) = x_w(t_v^-)
+    \end{math}
+\end{center}
 
 \section{Proposed approach}
 
-    \subsection{Algorithm to generate samples of G(n,p) graphs}
+Simulating the voter model over a graph involves several stages. 
+%
+First you need to generate the graph you want to use, and then you start modelling the events that make the system evolve.
 
-    This report examines two methods of generating samples of random graphs:
+    \subsection{Data structure for the graph}
+
+    A \textbf{dictionary} was used to implement the graph. 
+    %
+    Each node is accessible by an index and contains a nested disctionary where the state variable and the list of neighbours are stored. 
+
+    Each state variable is initialised according to the probability of being in the $+1$ state, this probability was called the \textit{bias probability}. 
+
+    \subsection{Algorithm to generate samples of $G(n,p)$ graphs}
+    
+    One of the most common types of graph is the random graph. 
+    %
+    It is described by a probability distribution or random process that generates it. 
+    %
+    In fact, its number of edges depends on a stochastic process that connects the nodes based on a probability, the \textit{edge probability}. 
+    %
+    The model that almost exclusively describes a random graph is the Erdős Rényi (ER) model. 
+
+    When the ER graph is generated, the dictionary is initialised with the desired number of nodes, without first connecting them. 
+    %
+    Then, to create the connection according to the edge probability, one of two methods are used based on the difference (in terms of factor of 10) between the number of nodes and the edge probability:
     \begin{itemize}
-        \item \textbf{Generating directly an Erdős–Rényi graph}: this method involves iterating over all the nodes and for each one iterating over all the nodes not already seen. This method then create an edge between a pair of nodes based on the \textit{edge probability}. This algorithm has complexity $O(n^2)$ but it tends to $O(nlog(n))$ because the second for loop is decreasing over time.
-        \begin{algorithm}
-            \caption{Erdős–Rényi method}
-            \label{alg:first}
-            \begin{algorithmic}
-                \STATE \textbf{Input:} n = number of nodes, p = edge probability
-                \FOR{$i$ \textbf{in} $\text{range}(n)$}
-                    \FOR{$j$ \textbf{in} $\text{range}(i + 1, n)$}
-                        \IF{$\text{random}() < p$}
-                            \STATE create edge(i,j)
-                        \ENDIF
-                    \ENDFOR
-                \ENDFOR
-            \end{algorithmic}
-        \end{algorithm}
+        \item \textbf{Bernoulli experiment for each pair of nodes}: this method involves iterating over all the nodes, and for each one iterates over all the nodes not yet seen. 
+        %
+        This method then creates an edge between a pair of vertices based on the \textit{bias probability}.
+        %
+        This algorithm has a complexity of $O(n^2)$, but tends to be $O(nlog(n))$ because the second for loop is decreasing in time.
 
-        \item \textbf{Take advantage in case of small edge probability}: when p can be considered small in front of the number of nodes, it can be calculated the number of expected edges (\textit{m}) that the graph will have through the formula:
+        \item \textbf{Take advantage of low edge probability}: if p can be considered small before the number of nodes, the number of expected edges ($m$) that the graph will have can be calculated by the formula:
         \begin{center}
             \begin{math}
-                \frac{n*(n-1)*p}{2}
+                  (n*(n-1)*p)/2 
             \end{math}            
-        \end{center}
-        
-        Then create a for loop that for each edge picks two random nodes and connects them. This algorithm has complexity $O(m)$ that for small values of $p$ tends to $O(n)$.
-        \begin{algorithm}
-            \caption{Taking advantage of small edge probability}
-            \label{alg:second}
-            \begin{algorithmic}
-                \STATE \textbf{Input:} n = number of nodes, p = edge probability
-                \STATE $m = n*(n-1)*p / 2$
-                \FOR{$i$ \textbf{in} $\text{range}(m)$}
-                    \WHILE{True}
-                        \STATE i,j = generate two nodes index
-                        \IF {$i==j$ \OR $j in node[i][neighbors]$}
-                            \STATE \textbf{continue}
-                        \ELSE
-                            \STATE $create edge(i,j)$
-                            \STATE \textbf{break}
-                        \ENDIF
-                    \ENDWHILE
-                \ENDFOR
-            \end{algorithmic}
-        \end{algorithm}
+        \end{center}        
+        where $p$ is the \textit{edge probability}. 
+        %
+        Then, for each edge, two random nodes that are not already connected are selected and connected.
+        %
+        This algorithm has complexity $O(m)$, which tends to $O(n)$ for small values of $p$.
     \end{itemize}
 
-    \subsection{Data structure}
+    \subsection{Algorithm to generate samples of $Z^2$ and $Z^3$ graphs}
 
-    I used a \textbf{dictionary} to handle the graph. Each key of the dict is an index of a node and each node is a nested dictionary with a list of neighbors and a state variable.
+    A graph can also be a \textit{Z-dimensional lattice}, where each node has an edge with all the nearest nodes in space. 
+    %
+    In this paper we will explore the $Z^2$ and $Z^3$ grids. The nodes of these graphs are arranged in such a way so that they form a 2D and 3D grid respectively, and where a node has all edges perpendicular and parallel to the others.
+
 
     \subsection{How the FES is handled}
 
@@ -117,13 +126,6 @@ This paper presents different simulations of the \textit{Voter Model} on random 
     Then after each wake-up event, it's filled with a new of such events associated with a new random node.
     %
     The wake-up process is supposed to follow a Poisson process so the inter-times are generated from a exponential distribution with $\lambda=1$
-
-    I modelled the \textbf{Voter Model} so for each event is updated the state variable of the waked up node ($v$) with the value of a random neighbor ($w$), following the formula:
-    \begin{center}
-        \begin{math}
-            x_v(t_v^+) = x_w(t_v^-)
-        \end{math}
-    \end{center}
 
 \section{Results}
 

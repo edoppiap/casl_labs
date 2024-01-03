@@ -3,6 +3,8 @@
 /**/other_people
 /**/outputs
 
+*.ipynb
+
 *.aux
 *.lof
 *.fls
