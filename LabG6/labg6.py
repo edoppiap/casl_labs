@@ -21,6 +21,7 @@
     Upload only the py code and the report (max 2 pages).
 """
 
+from tqdm import tqdm
 import random
 from queue import PriorityQueue
 import os
@@ -43,7 +44,7 @@ parser.add_argument('--improve_factor', '--alpha', type=float, default=.2,
                     help='Improve factor that an individual can develop at birth')
 parser.add_argument('--init_lifetime', type=int, default=50, 
                     help='Lifetime of the 1st generation')
-parser.add_argument('--repr_rate', '--lambda', type=float, default=3.5,
+parser.add_argument('--repr_rate', '--lambda', type=float, default=.1,
                     help='Rate at which an individual reproduces')
 
 # Simulation parameters
@@ -59,18 +60,13 @@ parser.add_argument('--seed', type=int, default=42,
                     help='For reproducibility reasons')
 
 class Individual():
-    def __init__(self, birth_time, param, parent_lf):
-        lam, alpha, p_i = param 
+    def __init__(self, birth_time, alpha, p_i, parent_lf):
         self.birth_time = birth_time
         self.lifetime = random.uniform(parent_lf, parent_lf*(1+alpha))\
             if random.random() < p_i else random.uniform(0, parent_lf)
-        self.lam = lam
         
     def __str__(self) -> str:
         return f'Birth_time: {self.birth_time:.2f} - Lifetime: {self.lifetime:.2f}'
-    
-    def get_reproduce_time(self, current_time):
-        return current_time + random.expovariate(self.lam)
             
     def get_death_time(self, current_time):
         return current_time + self.lifetime
@@ -79,35 +75,40 @@ class Event:
     def __init__(self, event_time, event_type, individual: Individual):
         self.time = event_time
         self.type = event_type
-        self.ind = individual
+        self.individual = individual
         
     def __lt__(self, other):
         return self.time < other.time
 
-def gen_init_population(init_p, lam, alpha, init_lifetime):
+def gen_init_population(init_p, alpha, init_lifetime):
     return [Individual(0, # born all at the same time
-                       lam=lam, 
                        alpha=alpha, 
                        p_i=0, # the 1st gen can't improve
                        parent_lf=init_lifetime) for _ in range(init_p)]
 
 # we can schedule a new birth based on len(population) after the new_death
-def death(current_time, param, population):
-    pass
+def death(current_time, FES: PriorityQueue, lam, population, individual): # meglio tenere spacchettato param
+    population.remove(individual)
+    
+    # schedule a new birth with the new len(population)
+    birth_time = current_time + random.expovariate(lam*len(population))
+    rand_individual = population[random.randint(0, len(population)-1)]
+    FES.put(Event(birth_time, 'birth', rand_individual))
 
 # we have to schedule a new death associated to the new_born
 # we can schedule a new birth based on len(population) after the new_born
-def birth(current_time, FES: PriorityQueue,  param, parent_lf, population):
+def birth(current_time, FES: PriorityQueue, lam,  alpha, p_i, parent_lf, population):
     new_born = Individual(birth_time=current_time,
-                          param=param,
+                          alpha=alpha,
+                          p_i=p_i,
                           parent_lf=parent_lf)
     population.append(new_born)
     
     # schedule the death associated with the new_born
-    FES.put(Event(new_born.get_death_time(), 'death', new_born))
+    FES.put(Event(new_born.get_death_time(current_time), 'death', new_born))
     
     # schedule a new birth with the new len(population)
-    birth_time = random.expovariate(lam*len(population))
+    birth_time = current_time + random.expovariate(lam*len(population))
     rand_individual = population[random.randint(0, len(population)-1)]
     FES.put(Event(birth_time, 'birth', rand_individual))
 
@@ -132,15 +133,13 @@ if __name__ == '__main__':
     FES = PriorityQueue()
     time = 0
     lam = args.repr_rate
-    param = lam, args.improve_factor, p_i=args.p_i
     
     population = gen_init_population(init_p=args.init_population,
-                                          lam=lam,
                                           alpha=args.improve_factor,
                                           init_lifetime=args.init_lifetime)
     
     for individual in population:
-        FES.put(Event(individual.get_death_time(), 'death', individual))
+        FES.put(Event(individual.get_death_time(0), 'death', individual))
     
     # the birth process follows a Poisson distr with lam = sum(lambdas)
     # because each one individual reproduce followint a Poisson distr with lam 
@@ -151,22 +150,43 @@ if __name__ == '__main__':
     first_repr = Event(birth_time, 'birth', rand_individual)
     FES.put(first_repr)
     
+    # pbar = tqdm(total=args.sim_time,
+    #             desc=f'Simulating natural selection',
+    #             postfix=len(population),
+    #             bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}, n indivisuals: {postfix}]')
+    
     #----------------------------------------------------------------#
     # EVENT LOOP
     #
     while time < args.sim_time:
         if FES.empty():
-            pass
+            print('Fes empty')
+            break
         
         event = FES.get()
+        
+        # pbar.postfix = len(population)
+        # if event.time < args.sim_time: # to prevent a warning to appear
+        #     pbar.update(event.time - time)
+        # else:
+        #     pbar.update(args.sim_time - time)
         time = event.time
         
         if event.type == 'birth':
             parent = event.individual
             birth(current_time=time,
                   FES=FES,
-                  param=param,
+                  lam=lam,
+                  alpha=args.improve_factor,
+                  p_i=args.prob_improve,
                   parent_lf=parent.lifetime,
                   population=population)
         elif event.type == 'death':
-            death()
+            individual = event.individual
+            death(current_time=time,
+                  FES=FES,
+                  lam=lam,
+                  population=population,
+                  individual=individual)
+        print(f'N individuals: {len(population)} - time: {time:.4f}', end='\r')
+    # pbar.close()
