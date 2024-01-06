@@ -36,16 +36,18 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
 # Population parameters
-parser.add_argument('--prob_improve', '--p_i', type=float, default=.01,
+parser.add_argument('--prob_improve', '--p_i', type=float, default=[.01, .001], nargs='+',
                     help='Probability of improvement of the lifetime')
-parser.add_argument('--init_population', '--p', type=int, default=50,
+parser.add_argument('--init_population', '--p', type=int, default=[5,10,25], nargs='+',
                     help='Number of individuals for the 1st generation')
-parser.add_argument('--improve_factor', '--alpha', type=float, default=.2,
+parser.add_argument('--improve_factor', '--alpha', type=float, default=[.1, .001], nargs='+',
                     help='Improve factor that an individual can develop at birth')
-parser.add_argument('--init_lifetime', type=int, default=50, 
+parser.add_argument('--init_lifetime', type=int, default=[1,2], nargs='+',
                     help='Lifetime of the 1st generation')
-parser.add_argument('--repr_rate', '--lambda', type=float, default=.1,
+parser.add_argument('--repr_rate', '--lambda', type=float, default=[.1, .01, .001],
                     help='Rate at which an individual reproduces')
+parser.add_argument('--max_population', type=int, default=100,
+                    help='This semplified version need a limit otherwise will infinite grow')
 
 # Simulation parameters
 parser.add_argument('--sim_time', type=int, default=1000,
@@ -59,20 +61,31 @@ parser.add_argument('--verbose', action='store_true',
 parser.add_argument('--seed', type=int, default=42, 
                     help='For reproducibility reasons')
 
+class Measure:
+    def __init__(self):
+        self.num_birth = 0
+        self.num_death = 0
+        self.average_pop = 0
+        self.time_last_event = 0
+        self.birth_per_gen = {}
+        
+    def increment_gen(self, gen):
+        self.birth_per_gen[gen] = self.birth_per_gen.setdefault(gen,0)+1
+
 class Individual():
-    def __init__(self, birth_time, alpha, p_i, parent_lf):
+    def __init__(self, birth_time, alpha, p_i, parent_lf, gen):
+        # self.lam = lam -> in this simplified version all individual share the same lambda
+        # so there is no need to store a lambda variable inside this class (maybe add in next version)
+        self.gen = gen
         self.birth_time = birth_time
         self.lifetime = random.uniform(parent_lf, parent_lf*(1+alpha))\
             if random.random() < p_i else random.uniform(0, parent_lf)
         
     def __str__(self) -> str:
         return f'Birth_time: {self.birth_time:.2f} - Lifetime: {self.lifetime:.2f}'
-            
-    def get_death_time(self, current_time):
-        return current_time + self.lifetime
     
 class Event:
-    def __init__(self, event_time, event_type, individual: Individual):
+    def __init__(self, event_time, event_type, individual: Individual = None):
         self.time = event_time
         self.type = event_type
         self.individual = individual
@@ -84,33 +97,98 @@ def gen_init_population(init_p, alpha, init_lifetime):
     return [Individual(0, # born all at the same time
                        alpha=alpha, 
                        p_i=0, # the 1st gen can't improve
-                       parent_lf=init_lifetime) for _ in range(init_p)]
+                       parent_lf=init_lifetime,
+                       gen=0) for _ in range(init_p)]
 
 # we can schedule a new birth based on len(population) after the new_death
-def death(current_time, FES: PriorityQueue, lam, population, individual): # meglio tenere spacchettato param
+def death(current_time, FES: PriorityQueue, lam, population, individual, data: Measure): 
     population.remove(individual)
     
-    # schedule a new birth with the new len(population)
-    birth_time = current_time + random.expovariate(lam*len(population))
-    rand_individual = population[random.randint(0, len(population)-1)]
-    FES.put(Event(birth_time, 'birth', rand_individual))
+    if len(population) > 0 and len(population) < args.max_population:
+        # schedule a new birth with the new len(population)
+        sum_lam = lam*len(population)
+        birth_time = current_time + random.expovariate(sum_lam)
+        FES.put(Event(birth_time, 'birth'))
 
 # we have to schedule a new death associated to the new_born
 # we can schedule a new birth based on len(population) after the new_born
-def birth(current_time, FES: PriorityQueue, lam,  alpha, p_i, parent_lf, population):
-    new_born = Individual(birth_time=current_time,
-                          alpha=alpha,
-                          p_i=p_i,
-                          parent_lf=parent_lf)
-    population.append(new_born)
+def birth(current_time, FES: PriorityQueue, lam,  alpha, p_i, population, data: Measure):
     
-    # schedule the death associated with the new_born
-    FES.put(Event(new_born.get_death_time(current_time), 'death', new_born))
+    # a new individual can born only if there are some in the population
+    if len(population) > 0 and len(population) < args.max_population:
+        rand_individual = population[random.randint(0, len(population)-1)]
+        new_born = Individual(birth_time=current_time,
+                            alpha=alpha,
+                            p_i=p_i,
+                            parent_lf=rand_individual.lifetime,
+                            gen=rand_individual.gen+1 )
+        population.append(new_born)
     
-    # schedule a new birth with the new len(population)
-    birth_time = current_time + random.expovariate(lam*len(population))
-    rand_individual = population[random.randint(0, len(population)-1)]
-    FES.put(Event(birth_time, 'birth', rand_individual))
+        # schedule the death associated with the new_born
+        FES.put(Event(current_time + new_born.lifetime, 'death', new_born))
+    
+    # schedule a new birth event with the new len(population)
+    sum_lam = lam*len(population)
+    birth_time = current_time + random.expovariate(sum_lam)
+    FES.put(Event(birth_time, 'birth'))
+    
+def simulate(init_p, init_lifetime, alpha, lam, p_i):
+    FES = PriorityQueue()
+    time = 0
+    
+    population = gen_init_population(init_p=init_p,
+                                          alpha=alpha,
+                                          init_lifetime=init_lifetime)
+    
+    for individual in population:
+        FES.put(Event(individual.lifetime, 'death', individual))
+    
+    # the birth process follows a Poisson distr with lam = sum(lambdas)
+    # because each one individual reproduce followint a Poisson distr with lam 
+    birth_time = random.expovariate(lam*len(population))
+        
+    # first event to start the simulation
+    first_repr = Event(birth_time, 'birth')
+    FES.put(first_repr)
+    
+    # pbar = tqdm(total=args.sim_time,
+    #             desc=f'Simulating natural selection',
+    #             postfix=len(population),
+    #             bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}, n indivisuals: {postfix}]')
+    
+    #----------------------------------------------------------------#
+    # EVENT LOOP
+    #
+    while time < args.sim_time:
+        if FES.empty() or len(population) == 0:
+            print(f'Population extinct after {time:.2f} units of time')
+            break
+        
+        event = FES.get()
+        
+        # pbar.postfix = len(population)
+        # if event.time < args.sim_time: # to prevent a warning to appear
+        #     pbar.update(event.time - time)
+        # else:
+        #     pbar.update(args.sim_time - time)
+        time = event.time
+        
+        if event.type == 'birth':
+            birth(current_time=time,
+                  FES=FES,
+                  lam=lam,
+                  alpha=alpha,
+                  p_i=p_i,
+                  population=population)
+        elif event.type == 'death':
+            individual = event.individual
+            death(current_time=time,
+                  FES=FES,
+                  lam=lam,
+                  population=population,
+                  individual=individual)
+        print(f'N individuals: {len(population)} - time: {time:.4f}', end='\r')
+    # pbar.close()
 
 #-----------------------------------------------------------------------------------------------------------#
 # MAIN METHOD
@@ -130,63 +208,20 @@ if __name__ == '__main__':
         
     print(f'Output images will be saved in the folder: {folder_path}')
     
-    FES = PriorityQueue()
-    time = 0
-    lam = args.repr_rate
+    random.seed(args.seed)
     
-    population = gen_init_population(init_p=args.init_population,
-                                          alpha=args.improve_factor,
-                                          init_lifetime=args.init_lifetime)
+    params = [(init_p, init_lifetime, alpha, lam, p_i) for init_p in args.init_population 
+              for init_lifetime in args.init_lifetime 
+              for alpha in args.improve_factor
+              for lam in args.repr_rate
+              for p_i in args.prob_improve]
     
-    for individual in population:
-        FES.put(Event(individual.get_death_time(0), 'death', individual))
+    print(f'params combination: {len(params)}')
     
-    # the birth process follows a Poisson distr with lam = sum(lambdas)
-    # because each one individual reproduce followint a Poisson distr with lam 
-    birth_time = random.expovariate(lam*len(population))
-        
-    # first event to start the simulation
-    rand_individual = population[random.randint(0, len(population)-1)]
-    first_repr = Event(birth_time, 'birth', rand_individual)
-    FES.put(first_repr)
-    
-    # pbar = tqdm(total=args.sim_time,
-    #             desc=f'Simulating natural selection',
-    #             postfix=len(population),
-    #             bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}, n indivisuals: {postfix}]')
-    
-    #----------------------------------------------------------------#
-    # EVENT LOOP
-    #
-    while time < args.sim_time:
-        if FES.empty():
-            print('Fes empty')
-            break
-        
-        event = FES.get()
-        
-        # pbar.postfix = len(population)
-        # if event.time < args.sim_time: # to prevent a warning to appear
-        #     pbar.update(event.time - time)
-        # else:
-        #     pbar.update(args.sim_time - time)
-        time = event.time
-        
-        if event.type == 'birth':
-            parent = event.individual
-            birth(current_time=time,
-                  FES=FES,
-                  lam=lam,
-                  alpha=args.improve_factor,
-                  p_i=args.prob_improve,
-                  parent_lf=parent.lifetime,
-                  population=population)
-        elif event.type == 'death':
-            individual = event.individual
-            death(current_time=time,
-                  FES=FES,
-                  lam=lam,
-                  population=population,
-                  individual=individual)
-        print(f'N individuals: {len(population)} - time: {time:.4f}', end='\r')
-    # pbar.close()
+    for init_p, init_lifetime, alpha, lam, p_i in params:
+        print(f'Simulate with init_p={init_p} - init_lifetime={init_lifetime} - alpha={alpha} - lambda={lam} - p_i={p_i}')
+        simulate(init_p=init_p,
+                init_lifetime=init_lifetime,
+                alpha=alpha,
+                lam=lam,
+                p_i=p_i)
