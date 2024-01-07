@@ -37,17 +37,17 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
 # Population parameters
-parser.add_argument('--prob_improve', '--p_i', type=float, default=[.5,.1], nargs='+',
+parser.add_argument('--prob_improve', '--p_i', type=float, default=[.2,.5,.8], nargs='+',
                     help='Probability of improvement of the lifetime')
-parser.add_argument('--init_population', '--p', type=int, default=[5,25], nargs='+',
+parser.add_argument('--init_population', '--p', type=int, default=[5,20], nargs='+',
                     help='Number of individuals for the 1st generation')
-parser.add_argument('--improve_factor', '--alpha', type=float, default=[.1], nargs='+',
+parser.add_argument('--improve_factor', '--alpha', type=float, default=[.2], nargs='+',
                     help='Improve factor that an individual can develop at birth')
 parser.add_argument('--init_lifetime', type=int, default=[2], nargs='+',
                     help='Lifetime of the 1st generation')
-parser.add_argument('--repr_rate', '--lambda', type=float, default=[.1, .01, .001],
+parser.add_argument('--repr_rate', '--lambda', type=float, default=[.5,.1],
                     help='Rate at which an individual reproduces')
-parser.add_argument('--max_population', type=int, default=100_000,
+parser.add_argument('--max_population', type=int, default=30_000,
                     help='This semplified version need a limit otherwise will infinite grow')
 
 # Simulation parameters
@@ -207,15 +207,20 @@ def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
     return time
     # pbar.close()
     
-def plot_gen_birth(gen_stats: dict, folder_path, file_str, init_p):
+def plot_gen_birth(gen_stats: dict, folder_path, init_p, init_lifetime, alpha, lam, p_i):
+    folder_str = f'in_p_{init_p}_in_lt_{init_lifetime}_a_{alpha}_l_{lam}_p_i_{p_i}'
+    graph_path = os.path.join(folder_path, folder_str)
+    if not os.path.exists(graph_path):
+        os.makedirs(graph_path)
     
     plt.figure(figsize=(12,8))
     plt.bar(list(gen_stats.keys()), [gen['n birth'] for gen in gen_stats.values()])
     plt.ylabel(f'Total number of children')
     plt.xlabel(f'Generation')
-    plt.title('Total number of children for generation')
+    plt.title('Total number of children for generation '\
+        +f'(init_n={init_p}, init_lifetime={init_lifetime}, alpha={alpha}, lam={lam}, p_i={p_i})')
     plt.grid(True, axis='y')
-    file_name = os.path.join(folder_path, 'tot_'+file_str)
+    file_name = os.path.join(graph_path, 'tot')
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
     
@@ -234,9 +239,10 @@ def plot_gen_birth(gen_stats: dict, folder_path, file_str, init_p):
     plt.bar(range(len(av_lf)), av_lf)
     plt.ylabel(f'Average lifetime')
     plt.xlabel(f'Generation')
-    plt.title('Average lifetime for generation')
+    plt.title(f'Average lifetime for generation'\
+        +f'(init_n={init_p}, init_lifetime={init_lifetime}, alpha={alpha}, lam={lam}, p_i={p_i})')
     plt.grid(True, axis='y')
-    file_name = os.path.join(folder_path, 'lf_'+file_str)
+    file_name = os.path.join(graph_path, 'lf')
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
     
@@ -244,9 +250,10 @@ def plot_gen_birth(gen_stats: dict, folder_path, file_str, init_p):
     plt.bar(range(len(av_num_child)), av_num_child)
     plt.ylabel(f'Average number of children')
     plt.xlabel(f'Generation')
-    plt.title('Average number of children for generation')
+    plt.title('Average number of children for generation'\
+        +f'(init_n={init_p}, init_lifetime={init_lifetime}, alpha={alpha}, lam={lam}, p_i={p_i})')
     plt.grid(True, axis='y')
-    file_name = os.path.join(folder_path, 'av_'+file_str)
+    file_name = os.path.join(graph_path, 'av')
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
 
@@ -304,9 +311,9 @@ if __name__ == '__main__':
         }
         results.append(pd.DataFrame([result]))
         
+        plot_pop_size(population_size)
         if len(data.birth_per_gen) > 7:
-            file_str = f'in_p_{init_p}_in_lt_{init_lifetime}_a_{alpha}_l_{lam}_p_i_{p_i}.'
-            plot_gen_birth(data.birth_per_gen, folder_path, file_str, init_p)
+            plot_gen_birth(data.birth_per_gen, folder_path, init_p, init_lifetime, alpha, lam, p_i)
     
     result_df = pd.concat(results, ignore_index=True)
     
