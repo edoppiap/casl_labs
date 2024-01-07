@@ -64,6 +64,13 @@ Lab G6: Natural selection (simplified)
 
     \subsection{Assumptions}
 
+    \begin{figure}[!b]
+        \centering
+        \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_0.5_p_i_0.2/lf.png}
+        \caption[short]{Lifetime evolution with low $p_i$ and low $\lambda$}
+        \label{fig:lf_low}
+    \end{figure}
+
     \begin{itemize}
         \item \textbf{Reproduction:} in nature there are many different forms of reproduction. Most require two individuals of the same species.
         %
@@ -72,19 +79,66 @@ Lab G6: Natural selection (simplified)
         This means that each individual can give birth to
         \item \textbf{Reproduction rate ($\lambda$):} each individual will reproduce with a specified rate of reproduction. In this simplified version, is considered that al the individuals will share the same reproduction rate ($\lambda$) and that this rate is always the same no matter the age of the individual.
         \item \textbf{Reproduction process:} it is assumed that this process follows a Poisson process. In fact, each birth event can be considered as independent and occurring with a given frequency in time. The reproduction process of the whole population can be considered as following a Poisson distribution with a given $\lambda_tot = \sum_{0}^{i}\lambda_i$ where $i=$individual. This assumption with the previous one means that the process of the whole population follows a Poisson distribution with $\lambda_{tot} = \lambda \cdot {n}_{pop}$ where ${n}_{pop}=$ size of the population. 
-        \item \textbf{Improvement over generation:} this is the process that models how resistance has been passed on to new generations. Each newborn receives a life expectancy from its parents, which is used to generate its lifetime variable. There is a possibility that this lifetime will be greater than the lifetime of the parent ($p_i$). In this case, the lifetime is randomly generated from a uniform distribution between the lifetime of the parent and the lifetime of the parent multiplied by a factor ($1+alpha$). Otherwise it is generated from a uniform distribution between 0 and the lifetime of the parent.
+        \item \textbf{Improvement over generation:} this is the process that models how resistance has been passed on to new generations. Each newborn receives a life expectancy from its parents, which is used to generate its lifetime variable. There is a possibility that this lifetime will be greater than the lifetime of the parent ($p_i$). In this case, the lifetime is randomly generated from a uniform distribution between the lifetime of the parent and the lifetime of the parent multiplied by a factor ($1+\alpha$). Otherwise it is generated from a uniform distribution between 0 and the lifetime of the parent.
     \end{itemize}
 
 \section{Results}
 
-        % \begin{figure}[!ht]
-        %     \centering
-        %     \includegraphics[width=\columnwidth]{media/er_consensus.png}
-        %     \caption[short]{+1 probability based on different bias probability}
-        %     \label{fig:er_consensus}
-        % \end{figure}
+    \subsection{Lifetime}
+
+        \begin{figure}[!ht]
+            \centering
+            \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_1.5_p_i_0.8/lf.png}
+            \caption[short]{Lifetime evolution with high $p_i$ and low $\lambda$}
+            \label{fig:lf_grow}
+        \end{figure}
+
+        In terms of lifetime, we can see in Fig. \ref{fig:lf_low} that it starts to decrease when the probability of improvement ($p_i$) is low, while in Fig. \ref{fig:lf_grow} it increases otherwise.
+
+    \subsection{Average number of children per generation}
+        The average number of children is also an interesting measure, as it also depends on $p_i$.
+        %
+        It can be seen in Fig. \ref{fig:av_low} that it starts to decrease with a low value of $p_i$, while it remain stable with a high value of $p_i$ (Fig. \ref{fig:av_grow}).
+
+        \begin{figure}[!ht]
+            \centering
+            \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_0.5_p_i_0.2/av.png}
+            \caption[short]{Avg. number of children evolution with low $p_i$ and low $\lambda$}
+            \label{fig:av_low}
+        \end{figure}
+
+        \begin{figure}[!ht]
+            \centering
+            \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_1.5_p_i_0.8/av.png}
+            \caption[short]{Avg. number of children evolution with high $p_i$ and low $\lambda$}
+            \label{fig:av_grow}
+        \end{figure}
+
+    \subsection{Total number of children per generation}
+
+        \begin{figure}[!ht]
+            \centering
+            \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_1.5_p_i_0.8/tot.png}
+            \caption[short]{Avg. number of children evolution with high $p_i$ and low $\lambda$}
+            \label{fig:tot_grow}
+        \end{figure}
+
+        Another interesting measure is the total number of children per generation.
+        %
+        In Fig. \ref{fig:tot_low} it can be seen that there is a generation that has given birth to the highest number of children, and this happen in the configuration with the low value of $p_i$.
+
+        \begin{figure}[!ht]
+            \centering
+            \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_0.5_p_i_0.2/tot.png}
+            \caption[short]{Avg. number of children evolution with low $p_i$ and low $\lambda$}
+            \label{fig:tot_low}
+        \end{figure}
+
+        While Fig. \ref{fig:tot_grow} shows the configuration with an high value of $p_i$ and it can be observed that the total number of children it doesn't show any tendency over time. 
     
 \section{Conclusion}
+
+In conclusion, the proposed approach seems to provide some information about the model it wants to simulate. This will serve as baseline for a future approach.
 
 %\bibliography{bibliography}
 %\bibliographystyle{ieeetr}
