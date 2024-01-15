@@ -1,8 +1,9 @@
 """
     Consider a simulator for natural selection with the following simplified simulation model:
 
-    All the individuals belong to the same species
-    The initial population is equal to P
+    All the individuals belong to S different species
+    Let s be the index of each species, s=1...S
+    The initial population of s is equal to P(s)
     The reproduction rate for each individual is lambda
     The lifetime LF(k) of individual k whose parent is d(k) is distributed according to the following distribution:
     LF(k)=
@@ -11,18 +12,21 @@
 
     where prob_improve  is the probability of improvement for a generation and alpha is the improvement factor (>=0)
 
+    The individuals move randomly in a given region and when individuals of different species meet, they may fight and may not survive.
     Answer to the following questions:
 
     Describe some interesting questions to address based on the above simulator.
+    List the corresponding input metrics.
     List the corresponding output metrics.
+    Describe in details the mobility model
+    Describe in details the fight model and the survivabilty model
     Develop the simulator
     Define some interesting scenario in terms of input parameters.
     Show and comment some numerical results addressing the above questions.
-    Upload only the py code and the report (max 2 pages).
+    Upload only the py code and the report (max 3 pages).
 """
 
 import pandas as pd
-from tqdm import tqdm
 import random
 from queue import PriorityQueue
 import os
@@ -49,6 +53,8 @@ parser.add_argument('--repr_rate', '--lambda', type=float, default=[1.5,.5],
                     help='Rate at which an individual reproduces')
 parser.add_argument('--max_population', type=int, default=15_000,
                     help='This semplified version need a limit otherwise will infinite grow')
+parser.add_argument('--grid_dimentions', type=int, default=100, 
+                    help='Side of the square of the grid dimension')
 
 # Simulation parameters
 parser.add_argument('--sim_time', type=int, default=1000,
@@ -76,15 +82,30 @@ class Measure:
         
     def increment_gen_lf(self, gen, lf):
         self.birth_per_gen[gen]['tot lf'] = self.birth_per_gen.setdefault(gen,{'n birth':0, 'tot lf':0})['tot lf']+lf
+        
+class Species():
+    def __init__(self, predator_prob):
+        # randomly select if the species will be a prey or a predator
+        self.species_type = 'prey' if random.random() < predator_prob else 'predator'
+        self.lst_prey = [] # if the species is a prey this list will remain empty
+
+    # this will add a species to the list of possible prey of this species
+    def set_prey(self, prey_species):
+        self.lst_prey.append(prey_species)
 
 class Individual():
-    def __init__(self, birth_time, alpha, p_i, parent_lf, gen):
+    def __init__(self, birth_time, alpha, p_i, parent_lf, gen, initial_position, species: Species):
         # self.lam = lam -> in this simplified version all individual share the same lambda
         # so there is no need to store a lambda variable inside this class (maybe add in next version)
         self.gen = gen
         self.birth_time = birth_time
         self.lifetime = random.uniform(parent_lf, parent_lf*(1+alpha))\
             if random.random() < p_i else random.uniform(0, parent_lf)
+        self.current_position = initial_position
+        self.species = species
+        
+    def move_randomly(self):
+        return
         
     def __str__(self) -> str:
         return f'Birth_time: {self.birth_time:.2f} - Lifetime: {self.lifetime:.2f}'
@@ -106,47 +127,43 @@ def gen_init_population(init_p, alpha, init_lifetime):
                        gen=0) for _ in range(init_p)]
 
 # we can schedule a new birth based on len(population) after the new_death
-def death(current_time, FES: PriorityQueue, lam, population: list, individual, data: Measure):
+def death(current_time, population: list, individual, data: Measure):
     data.average_pop += len(population)*(current_time - data.time_last_event)
     data.time_last_event = current_time
     data.num_death+=1
     population.remove(individual)
-    
-    if len(population) > 0:
-        # schedule a new birth with the new len(population)
-        sum_lam = lam*len(population)
-        birth_time = current_time + random.expovariate(sum_lam)
-        FES.put(Event(birth_time, 'birth'))
 
 # we have to schedule a new death associated to the new_born
 # we can schedule a new birth based on len(population) after the new_born
-def birth(current_time, FES: PriorityQueue, lam,  alpha, p_i, population, data: Measure):
+def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population, data: Measure):
     data.average_pop += len(population)*(current_time - data.time_last_event)
     data.time_last_event = current_time
     
-    # a new individual can born only if there are some in the population
-    if len(population) > 0:
+    # check if the parent is still alive because it can be killed 
+    if parent in population:
         data.num_birth += 1
         
-        rand_individual = population[random.randint(0, len(population)-1)]
+        #rand_individual = population[random.randint(0, len(population)-1)]
         new_born = Individual(birth_time=current_time,
                             alpha=alpha,
                             p_i=p_i,
-                            parent_lf=rand_individual.lifetime,
-                            gen=rand_individual.gen+1 )
+                            parent_lf=parent.lifetime,
+                            gen=parent.gen+1 )
         population.append(new_born)
-        data.increment_gen_birth(rand_individual.gen)
+        data.increment_gen_birth(parent.gen)
         data.increment_gen_lf(new_born.gen, new_born.lifetime)
-    
+
+        death_time = current_time + new_born.lifetime
         # schedule the death associated with the new_born
-        FES.put(Event(current_time + new_born.lifetime, 'death', new_born))
-    
-    if len(population) % 5 == 0:
-        # schedule a new birth event with the new len(population)
-        sum_lam = lam*len(population)
-        birth_time = current_time + random.expovariate(sum_lam)
-        FES.put(Event(birth_time, 'birth'))
-    
+        FES.put(Event(death_time, 'death', new_born))
+        
+        # schedule all the birth event relative to this individual
+        birth_time = current_time
+        while birth_time < death_time:
+            # schedule a new birth event with the new len(population)
+            birth_time = current_time + random.expovariate(lam)
+            FES.put(Event(birth_time, 'birth', new_born))
+
 def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
     FES = PriorityQueue()
     time = 0
@@ -196,6 +213,7 @@ def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
         
         if event.type == 'birth':
             birth(current_time=time,
+                  parent=event.individual,
                   FES=FES,
                   lam=lam,
                   alpha=alpha,
@@ -205,8 +223,6 @@ def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
         elif event.type == 'death':
             individual = event.individual
             death(current_time=time,
-                  FES=FES,
-                  lam=lam,
                   population=population,
                   individual=individual,
                   data=data)
