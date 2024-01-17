@@ -103,8 +103,9 @@ class Individual():
             if random.random() < p_i else random.uniform(0, parent_lf)
         self.current_position = initial_position
         self.species = species
-        
-    def move_randomly(self):
+    
+    # at every move the individual can move only in a single dimention     
+    def move_randomly(self, grid: tuple):
         return
         
     def __str__(self) -> str:
@@ -163,10 +164,24 @@ def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population
             # schedule a new birth event with the new len(population)
             birth_time = current_time + random.expovariate(lam)
             FES.put(Event(birth_time, 'birth', new_born))
+            
+def generate_world(dim):
+    world = {(x,y): {'individual':[], 'neighbors':[]} for x in range(dim) for y in range(dim)}
+    
+    for x in range(dim):
+        for y in range(dim):
+            if x+1 < dim:
+                world[(x,y)]['neighbors'].append((x+1,y))
+                world[(x+1,y)]['neighbors'].append((x,y))
+            if y+1 < dim:
+                world[(x,y)]['neighbors'].append((x,y+1))
+                world[(x,y+1)]['neighbors'].append((x,y))
 
 def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
     FES = PriorityQueue()
     time = 0
+    
+    world = generate_world(args.grid_dimentions)
     
     population = gen_init_population(init_p=init_p,
                                           alpha=alpha,
