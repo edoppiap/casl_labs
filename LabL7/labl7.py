@@ -23,7 +23,6 @@
 import argparse
 import os, datetime
 import random
-import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
@@ -42,24 +41,24 @@ def get_input_parameters():
                         help='Reproducibility rate (R(0)) for the simulation') 
     parser.add_argument('--recov_rate', type=float, default=.1,
                         help='Recovery rate')
-    parser.add_argument('--fatality_rate', type=float, default=.3,
+    parser.add_argument('--fatality_rate', type=float, default=.03,
                         help='Fatality rate')
     parser.add_argument('--hospitalized_percentage', type=float, default=.1,
                         help='Percentage of infected individuals that needs to be Hospitalized')
-    parser.add_argument('--hosp_places', type=int, default=[10_000, 50_000], nargs='+',
+    parser.add_argument('--hosp_places', type=int, default=10_000,
                         help='Number of places available in the hospital system')
     parser.add_argument('--death_limit', type=int, default=100_000,
                         help='Maximum number of death in one year')
-    parser.add_argument('--sim_time', type=int, default=1000,
+    parser.add_argument('--sim_time', type=int, default=365,
                         help='Period of time to simulate')
+    parser.add_argument('--restr_rate', type=float, default=[.5,.4,.35,.3], nargs='+',
+                        help='Float between 0 and 1 representing how strong the restriction are')
 
     # utility parameters
     parser.add_argument('--accuracy_threshold', type=float, default=.8,
                         help='Accuracy value for which we accept the result')
     parser.add_argument('--confidence_level', type=float, default=.8,
                         help='Value of confidence we want for the accuracy calculation')
-    parser.add_argument('--verbose', action='store_true',
-                        help='To see the consensus sum of the nodes')
     parser.add_argument('--seed', type=int, default=42, 
                         help='For reproducibility reasons')
     
@@ -92,44 +91,111 @@ def initial_population(n):
     population = {
         'time': [0],
         'susceptible':[n], # at t=0 the only variable is the susceptible one
-        'infected':[n*.01],
-        'removed':[0]
+        'infected':[int(n*.001)], # starts the simulation with a little number of infected
+        'hospitalized':[0],
+        'recovered':[0],
+        'deaths':[0]
     }
     
     return population
 
 #-----------------------------------------------------------------------------------------------------------#
-# INPUT PARAMETERS
+# SIMULATION
 #
 #
-def simulate(population: dict, max_time, lam, gamma):
+def simulate(population: dict, max_time, lam, gamma, restr_rate, death_rate, hosp_places):
     S = population['susceptible'][0]
     I = population['infected'][0]
-    R = population['removed'][0]
+    R = population['recovered'][0]
+    H = population['hospitalized'][0]
+    D = population['deaths'][0]
     N = S+I+R
     
-    for t in range(1,max_time):
-        I += (lam*population['susceptible'][t-1]*population['infected'][t-1])/N -gamma*population['infected'][t-1]
-        R += gamma*population['infected'][t-1]
-        S -= (lam*population['susceptible'][t-1]*population['infected'][t-1])/N
+    #------------------------------------#
+    # SIM LOOP
+    #
+    #
+    for day in range(1,max_time):
         
-        population['susceptible'].append(S)
-        population['infected'].append(I)
-        population['removed'].append(R)
-        population['time'].append(t)
+        #---------------------------------#
+        # CALCULATE NEW DAYS INFECTED INDIVIDUALS
+        #
+        new_removed = gamma*(population['infected'][day-1] + population['hospitalized'][day-1])
+        new_infected = (lam*restr_rate*population['susceptible'][day-1]*population['infected'][day-1])/N
+        S -= new_infected
+        
+        #---------------------------------#
+        # SEPARETE INFECTED INTO COMMON AND HOSPITALIZED
+        #
+        d_i = new_infected - new_removed # increase in the infected population
+        I += d_i * (1 - args.hospitalized_percentage) # add the percentage of common infected
+        H += d_i * (args.hospitalized_percentage) # add the percentage of hospitalized infected
+        if H > hosp_places: # if the are no place left
+            # adding the left out to the count of the infected
+            I += d_i * (args.hospitalized_percentage) + (H - hosp_places)
+            H = hosp_places
+        if H < 0: # there are no hospitalized left to remove
+            I += d_i * (args.hospitalized_percentage)
+            H = 0
+        
+        #---------------------------------#
+        # SEPARETE REMOVED INTO RECOVERED AND DEATHS
+        #
+        R += new_removed * (1-death_rate) # percentage of removed that recover
+        D += new_removed * death_rate # percentage of removed that die
+        
+        population['susceptible'].append(int(S))
+        population['infected'].append(int(I))
+        population['hospitalized'].append(int(H))
+        population['recovered'].append(int(R))
+        population['deaths'].append(int(D))
+        population['time'].append(day)
 
-def plot_results(population: dict):
+#-----------------------------------------------------------------------------------------------------------#
+# PLOT GRAPHS
+#
+#
+def plot_results(population: dict = None, populations: list = None):
     
-    plt.figure(figsize=(12,8))
-    plt.plot(population['time'], population['susceptible'], label='Susceptible')
-    plt.plot(population['time'], population['infected'], label='Infected')
-    plt.plot(population['time'], population['removed'], label='Removed')
-    plt.xlabel('Time')
-    plt.ylabel('N individuals')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-    
+    if population:
+        plt.figure(figsize=(12,8))
+        #plt.plot(population['time'], population['susceptible'], label='Susceptible')
+        plt.plot(population['time'], population['infected'], label='Infected', c='orange')
+        #plt.plot(population['time'], population['recovered'], label='Recovered', c='g')
+        plt.plot(population['time'], population['deaths'], label='Deaths', c='black')
+        plt.plot(population['time'], population['hospitalized'], label='Hospitalized')
+        plt.axhline(y=args.death_limit, color='r', linestyle='--', label='Desired number of deaths')
+        plt.xlabel('Time')
+        plt.ylabel('N individuals')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+        
+    if populations:
+        plt.figure(figsize=(12,8))
+        for p,population in populations:
+            plt.plot(population['time'], population['deaths'], label=f'Deaths with p = {p}')
+        plt.axhline(y=args.death_limit, color='r', linestyle='--', label='Desired max number of deaths')
+        plt.xlabel('Time')
+        plt.ylabel('N individuals')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+        
+        plt.figure(figsize=(12,8))
+        for p,population in populations:
+            plt.plot(population['time'], population['hospitalized'], label=f'Hospitalized individuals with p = {p}')
+        plt.axhline(y=args.hosp_places, color='r', linestyle='--', label='Max places in hospitals')
+        plt.xlabel('Time')
+        plt.ylabel('N individuals')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+#-----------------------------------------------------------------------------------------------------------#
+# MAIN
+#
+#
 if __name__ == '__main__':
     
     args = get_input_parameters()
@@ -138,12 +204,23 @@ if __name__ == '__main__':
     # SET THE SEED
     #
     random.seed(args.seed)
-    np.random.seed(args.seed)
     
     # folder_path = create_output_folder()
     
-    population = initial_population(args.initial_population)
+    populations = []
     
-    simulate(population, max_time=args.sim_time, lam=args.repr_rate, gamma=args.recov_rate)
-    
-    plot_results(population)
+    for restr_rate in args.restr_rate:
+        population = initial_population(args.initial_population)
+        
+        simulate(population, 
+                 max_time=args.sim_time, 
+                 lam=args.repr_rate, 
+                 gamma=args.recov_rate, 
+                 death_rate=args.fatality_rate, 
+                 restr_rate=restr_rate,
+                 hosp_places=args.hosp_places)
+        
+        #plot_results(population=population)
+        
+        populations.append((restr_rate,population))
+    plot_results(populations=populations)
