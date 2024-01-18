@@ -3,6 +3,8 @@
 /**/other_people
 /**/outputs
 
+/venv
+
 *.ipynb
 
 *.aux
