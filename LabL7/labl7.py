@@ -80,7 +80,7 @@ def get_input_parameters():
 def create_output_folder():
     
     script_directory = os.path.dirname(os.path.abspath(__file__))
-    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M")
+    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
     folder_path = os.path.join(script_directory, 'outputs',current_time)
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
@@ -99,9 +99,9 @@ def calculate_restriction_strategy(taken,tot,gamma):
     if taken < tot*code_int[0]:
         restr_rate = 1 # green code
     elif taken >= tot*code_int[0] and taken < tot*code_int[1]:
-        restr_rate = gamma  # orange code
+        restr_rate = .35  # orange code
     else:
-        restr_rate = gamma * .8 # red code
+        restr_rate = .1  # red code
 
     return restr_rate
 
