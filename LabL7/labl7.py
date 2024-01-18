@@ -21,7 +21,8 @@
 """
 
 import argparse
-import os, datetime
+import os
+from datetime import datetime
 import random
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -51,6 +52,10 @@ def get_input_parameters():
                         help='Percentage of infected individuals that needs to be Hospitalized')
     parser.add_argument('--hosp_places', type=int, default=10_000,
                         help='Number of places available in the hospital system')
+    parser.add_argument('--it_places', default=50_000, type=int,
+                        help='Number of places for Intensive Treatment')
+    parser.add_argument('--it_percentage', type=float, default=.06,
+                        help='Percentage of infected individuals that needs to be Intensive Treated')
     parser.add_argument('--death_limit', type=int, default=100_000,
                         help='Maximum number of death in one year')
     parser.add_argument('--sim_time', type=int, default=365,
@@ -83,6 +88,22 @@ def create_output_folder():
     print(f'Output images will be saved in the folder: {folder_path}')
     
     return folder_path
+
+#-----------------------------------------------------------------------------------------------------------#
+# RESTRICTION STRATEGY
+#
+#
+def calculate_restriction_strategy(taken,tot,gamma):
+    code_int = [.3,.5] # 30% and 50%
+        
+    if taken < tot*code_int[0]:
+        restr_rate = 1 # green code
+    elif taken >= tot*code_int[0] and taken < tot*code_int[1]:
+        restr_rate = gamma  # orange code
+    else:
+        restr_rate = gamma * .8 # red code
+
+    return restr_rate
 
 #-----------------------------------------------------------------------------------------------------------#
 # SIR MODEL POPULATION
@@ -147,23 +168,7 @@ def simulate(population: dict, max_time, r_0, gamma, death_rate, hosp_places):
         R_t = population['recovered'][-1]
         D_t = population['deaths'][-1]
         
-        code_int = [.3,.5]
-        
-        if H_t < hosp_places*code_int[0]:
-            restr_rate = 1 # green code
-        elif H_t >= hosp_places*code_int[0] and H_t < hosp_places*code_int[1]:
-            restr_rate = gamma  # orange code
-        else:
-            restr_rate = gamma * .8 # red code
-        
-        # if day < 11: 
-        #     restr_rate = 1
-        # else: 
-        #     restr_rate = gamma / 2
-        
-        # restr_rate = 1 # normal behaviour, only for debug
-        
-        
+        restr_rate = min(calculate_restriction_strategy(H_t, hosp_places, gamma), calculate_restriction_strategy(T_t, args.it_places, gamma))
         
         infected_intensity = (restr_rate * lam * S_t * I_t) / gamma # new infected depends only from I_t (Q_t and H_t do not infect others)
         quarantined_intensity = quarantined_gamma * I_t # Only the infected can became quaratined
@@ -205,9 +210,10 @@ def simulate(population: dict, max_time, r_0, gamma, death_rate, hosp_places):
         #---------------------------------#
         # SEPARETE INFECTED INTO COMMON AND HOSPITALIZED
         #
-        new_I_effective = int(new_I * (1 - args.hospitalized_percentage))
-        new_Q_effective = int(new_Q * (1 - args.hospitalized_percentage))
+        new_I_effective = int(new_I * (1 - args.hospitalized_percentage - args.it_percentage))
+        new_Q_effective = int(new_Q * (1 - args.hospitalized_percentage - args.it_percentage))
         new_H = int((new_I+new_Q) * args.hospitalized_percentage)
+        new_T = int((new_I+new_Q) * args.it_percentage)
         
         #---------------------------------#
         # SEPARETE REMOVED INTO RECOVERED AND DEATHS
@@ -216,11 +222,14 @@ def simulate(population: dict, max_time, r_0, gamma, death_rate, hosp_places):
         new_D = int(D_t + (len(new_removed_I)+ len(new_removed_Q)) * death_rate)
         
         #---------------------------------#
-        # TAKE INTO ACCOUNT THE MAX NUM OF HOSPITAL PLACES
+        # TAKE INTO ACCOUNT THE MAX NUM OF HOSPITAL AND IT PLACES
         #
         if new_H > hosp_places:
             new_D += new_H - hosp_places # the left out will die
             new_H = hosp_places
+        if new_T > args.it_places:
+            new_D += new_T - args.it_places
+            new_T = args.it_places
         
         #---------------------------------#
         # STORE RESULTS
@@ -231,6 +240,7 @@ def simulate(population: dict, max_time, r_0, gamma, death_rate, hosp_places):
         population['quarantined'].append(new_Q_effective)
         population['hospitalized'].append(new_H)
         population['deaths'].append(new_D)
+        population['intensive'].append(new_T)
         population['recovered'].append(new_R_effective)
         
         if args.verbose: print(f'{lam = }')
@@ -246,6 +256,7 @@ def simulate_mean_field(population: dict, max_time, r_0, gamma, death_rate, hosp
     I = population['infected'][0]
     R = population['recovered'][0]
     H = population['hospitalized'][0]
+    IT = population['intensive'][0]
     Q = population['quarantined'][0]
     D = population['deaths'][0]
     
@@ -259,23 +270,21 @@ def simulate_mean_field(population: dict, max_time, r_0, gamma, death_rate, hosp
     #
     #
     for day in tqdm(range(1,max_time+1), desc='Simulating with mean_field', disable=args.verbose):
+        S_t = population['susceptible'][-1]
+        I_t = population['infected'][-1]
+        H_t = population['hospitalized'][-1]
+        T_t = population['intensive'][-1]
+        Q_t = population['quarantined'][-1]
         
-        code_int = [.3,.5]
-        
-        if H < hosp_places*code_int[0]:
-            restr_rate = 1 # green code
-        elif H >= hosp_places*code_int[0] and H < hosp_places*code_int[1]:
-            restr_rate = gamma  # orange code
-        else:
-            restr_rate = gamma * .8 # red code
+        restr_rate = min(calculate_restriction_strategy(H, hosp_places, gamma), calculate_restriction_strategy(IT,args.it_places,gamma))
         
         #---------------------------------#
         # CALCULATE NEW DAYS INFECTED INDIVIDUALS
         #
-        new_removed_I = gamma*(population['infected'][day-1] + population['hospitalized'][day-1])
-        new_removed_Q = gamma*(population['quarantined'][day-1])
-        new_infected = (lam*restr_rate*population['susceptible'][day-1]*population['infected'][day-1])
-        new_quarantined = args.quar_rate * (population['infected'][day-1])        
+        new_removed_I = gamma*(I_t + H_t)
+        new_removed_Q = gamma*(Q_t)
+        new_infected = (lam*restr_rate*S_t*I_t)
+        new_quarantined = args.quar_rate * (I_t)        
         
         S -= new_infected
         
@@ -283,17 +292,13 @@ def simulate_mean_field(population: dict, max_time, r_0, gamma, death_rate, hosp
         # SEPARETE INFECTED INTO COMMON AND HOSPITALIZED
         #
         d_i = new_infected - new_removed_I # increase in the infected population
-        I += d_i * (1 - args.hospitalized_percentage) # add the percentage of common infected
-        H += d_i * (args.hospitalized_percentage) # add the percentage of hospitalized infected
-        if H > hosp_places: # if the are no place left
-            # adding the left out to the count of the infected
-            I += d_i * (args.hospitalized_percentage) + (H - hosp_places)
-            H = hosp_places
-        if H < 0: # there are no hospitalized left to remove
-            I += d_i * (args.hospitalized_percentage)
-            H = 0
+        I += d_i * (1 - args.hospitalized_percentage - args.it_percentage) # add the percentage of common infected
             
-        Q += new_quarantined - new_removed_Q
+        d_q = new_quarantined - new_removed_Q
+        Q += d_q * (1 - args.hospitalized_percentage - args.it_percentage)
+        
+        H += (d_i+d_q) * args.hospitalized_percentage # add the percentage of hospitalized infected
+        IT += (d_i+d_q) * args.it_percentage
         
         #---------------------------------#
         # SEPARETE REMOVED INTO RECOVERED AND DEATHS
@@ -301,11 +306,20 @@ def simulate_mean_field(population: dict, max_time, r_0, gamma, death_rate, hosp
         R += (new_removed_I+new_removed_Q) * (1-death_rate) # percentage of removed that recover
         D += (new_removed_I+new_removed_Q) * death_rate # percentage of removed that die
         
+        if H > hosp_places: # if the are no place left
+            # adding the left out to the count of the infected
+            D += (H - hosp_places)
+            H = hosp_places
+        if IT > args.it_places:
+            D += IT - args.it_places
+            IT = args.it_places
+        
         population['susceptible'].append(int(S))
         population['infected'].append(int(I))
         population['hospitalized'].append(int(H))
         population['quarantined'].append(int(Q))
         population['recovered'].append(int(R))
+        population['intensive'].append(int(IT))
         population['deaths'].append(int(D))
         population['time'].append(day)
 
@@ -313,55 +327,71 @@ def simulate_mean_field(population: dict, max_time, r_0, gamma, death_rate, hosp
 # PLOT GRAPHS
 #
 #
-def plot_results(restr_rate = None, population:dict=None, mean_pop: dict = None, populations: list = None):
+def plot_results(output_folder, restr_rate = None, population:dict=None, mean_pop: dict = None, populations: list = None):
     
     if population or mean_pop:
+        # plt.figure(figsize=(12,8))
+        # #plt.plot(population['time'], population['susceptible'], label='Susceptible')
+        # if mean_pop:
+        #     #plt.plot(mean_pop['time'], mean_pop['susceptible'], label='Susceptible (mean field)', c='b', linestyle='--')
+        #     plt.plot(mean_pop['time'], mean_pop['infected'], label='Infected (mean field)', c='orange', linestyle='--')
+        #     #plt.plot(mean_pop['time'], mean_pop['recovered'], label='Recovered', c='g', linestyle='--')
+        #     plt.plot(mean_pop['time'], mean_pop['deaths'], label='Deaths (mean field)', c='black', linestyle='--')
+        #     plt.plot(mean_pop['time'], mean_pop['hospitalized'], label='Hospitalized (mean field)', c='royalblue', linestyle='--')
+        # if population:
+        #     #plt.plot(population['time'], population['susceptible'], label='Susceptible', c='b')
+        #     plt.plot(population['time'], population['infected'], label='Infected', c='orange')
+        #     #plt.plot(population['time'], population['quarantined'], label='Quarantined', c='y')
+        #     #plt.plot(population['time'], population['recovered'], label='Recovered', c='g')
+        #     plt.plot(population['time'], population['deaths'], label='Deaths', c='black')
+        #     plt.plot(population['time'], population['hospitalized'], c='royalblue', label='Hospitalized')
+        # plt.axhline(y=args.death_limit, color='r', linestyle='dashdot', label='Desired number of deaths')
+        # plt.axhline(y=args.hosp_places, color='b', linestyle='dashdot', label='Max places in hospitals')
+        # plt.xlabel('Time')
+        # plt.ylabel('N individuals')
+        # title_str = f'Epidemic process with rho = {restr_rate}' if restr_rate else 'Epidemic process'
+        # plt.title(title_str)
+        # plt.legend()
+        # plt.grid(True)
+        # plt.show()
+        
         plt.figure(figsize=(12,8))
-        #plt.plot(population['time'], population['susceptible'], label='Susceptible')
-        if mean_pop:
-            plt.plot(mean_pop['time'], mean_pop['infected'], label='Infected', c='orange', linestyle='--')
-            #plt.plot(mean_pop['time'], mean_pop['recovered'], label='Recovered', c='g', linestyle='--')
-            plt.plot(mean_pop['time'], mean_pop['deaths'], label='Deaths', c='black', linestyle='--')
-            plt.plot(mean_pop['time'], mean_pop['hospitalized'], label='Hospitalized', linestyle='--')
-        if population:
-            plt.plot(population['time'], population['infected'], label='Infected', c='orange')
-            #plt.plot(population['time'], population['quarantined'], label='Quarantined', c='y')
-            #plt.plot(population['time'], population['susceptible'], label='Susceptible', c='b')
-            #plt.plot(population['time'], population['recovered'], label='Recovered', c='g')
-            plt.plot(population['time'], population['deaths'], label='Deaths', c='black')
-            plt.plot(population['time'], population['hospitalized'], label='Hospitalized')
+        plt.plot(population['time'], population['infected'], label='Infected', c='orange')
+        plt.plot(population['time'], population['quarantined'], label='Quarantined', c='y')
+        #plt.plot(population['time'], population['recovered'], label='Recovered', c='g')
+        plt.plot(population['time'], population['deaths'], label='Deaths', c='black')
+        plt.plot(population['time'], population['hospitalized'], c='royalblue', label='Hospitalized')
+        plt.plot(population['time'], population['intensive'], c='red', label='Intensive')
         plt.axhline(y=args.death_limit, color='r', linestyle='dashdot', label='Desired number of deaths')
         plt.axhline(y=args.hosp_places, color='b', linestyle='dashdot', label='Max places in hospitals')
+        plt.axhline(y=args.it_places, color='g', linestyle='dashdot', label='Max places in intensive treatment')
         plt.xlabel('Time')
         plt.ylabel('N individuals')
-        title_str = f'Epidemic process with rho = {restr_rate}' if restr_rate else 'Epidemic process'
-        plt.title(title_str)
+        plt.title(f'Stochastic epidemic process simulation')
         plt.legend()
         plt.grid(True)
-        plt.show()
-        
-    if populations:
-        plt.figure(figsize=(12,8))
-        for p,mean_pop in populations:
-            plt.plot(mean_pop['time'], mean_pop['deaths'], label=f'Deaths with p = {p}')
-        plt.axhline(y=args.death_limit, color='r', linestyle='--', label='Desired max number of deaths')
-        plt.xlabel('Time')
-        plt.ylabel('N individuals')
-        plt.title('Number of deaths with different restriction (the higher p the less restriction)')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
+        file_name = os.path.join(output_folder, f'stochastic.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        # plt.show()
         
         plt.figure(figsize=(12,8))
-        for p,mean_pop in populations:
-            plt.plot(mean_pop['time'], mean_pop['hospitalized'], label=f'Hospitalized individuals with p = {p}')
-        plt.axhline(y=args.hosp_places, color='r', linestyle='--', label='Max places in hospitals')
+        plt.plot(mean_pop['time'], mean_pop['infected'], label='Infected', c='orange')
+        plt.plot(population['time'], population['quarantined'], label='Quarantined', c='y')
+        #plt.plot(mean_pop['time'], mean_pop['recovered'], label='Recovered', c='g', linestyle='--')
+        plt.plot(mean_pop['time'], mean_pop['deaths'], label='Deaths', c='black')
+        plt.plot(mean_pop['time'], mean_pop['hospitalized'], label='Hospitalized', c='royalblue')
+        plt.plot(mean_pop['time'], mean_pop['intensive'], label='Intensive', c='red')
+        plt.axhline(y=args.death_limit, color='r', linestyle='dashdot', label='Desired number of deaths')
+        plt.axhline(y=args.hosp_places, color='b', linestyle='dashdot', label='Max places in hospitals')
+        plt.axhline(y=args.it_places, color='g', linestyle='dashdot', label='Max places in intensive treatment')
         plt.xlabel('Time')
         plt.ylabel('N individuals')
-        plt.title('Number of infected with different restriction (the higher p the less restriction)')
+        plt.title(f'Mean field epidemic process simulation')
         plt.legend()
         plt.grid(True)
-        plt.show()
+        file_name = os.path.join(output_folder, f'mean_field.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        # plt.show()
 
 #-----------------------------------------------------------------------------------------------------------#
 # MAIN
@@ -375,14 +405,13 @@ if __name__ == '__main__':
     # SET THE SEED
     #
     random.seed(args.seed)
+    np.random.seed(args.seed)
     
-    # folder_path = create_output_folder()
+    output_folder = create_output_folder()
     
-    #populations = []
+    population = initial_population(args.initial_population) # population for the stochastic simulation
     
-    population = initial_population(args.initial_population)
-    
-    mean_pop = copy.deepcopy(population)
+    mean_pop = copy.deepcopy(population) # population for the mean field simulation
     
     simulate(population=population,
                 max_time=args.sim_time, 
@@ -397,9 +426,5 @@ if __name__ == '__main__':
              gamma=args.recov_rate, 
              death_rate=args.fatality_rate,
              hosp_places=args.hosp_places)
-    plot_results(mean_pop=mean_pop, population=population)
     
-    #plot_results(population=population,mean_pop=mean_pop)
-    
-    #populations.append((restr_rate,population))
-    # plot_results(populations=populations)
+    plot_results(output_folder, mean_pop=mean_pop, population=population)
