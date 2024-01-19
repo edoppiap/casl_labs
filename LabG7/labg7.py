@@ -26,6 +26,10 @@
     Upload only the py code and the report (max 3 pages).
 """
 
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# IMPORTS
+#
+#
 import pandas as pd
 import random
 from queue import PriorityQueue
@@ -34,7 +38,7 @@ import argparse
 from datetime import datetime
 import matplotlib.pyplot as plt
 
-#-----------------------------------------------------------------------------------------------------------#
+#--------------------------------------------------------------------------------------------------------------------------------------------#
 # INPUT PARAMETERS
 #
 #
@@ -43,11 +47,11 @@ parser = argparse.ArgumentParser(description='Input parameters for the simulatio
 # Population parameters
 parser.add_argument('--prob_improve', '--p_i', type=float, default=[.2,.8], nargs='+',
                     help='Probability of improvement of the lifetime')
-parser.add_argument('--init_population', '--p', type=int, default=[5,20], nargs='+',
+parser.add_argument('--init_population', '--p', type=int, default=[2000], nargs='+',
                     help='Number of individuals for the 1st generation')
 parser.add_argument('--improve_factor', '--alpha', type=float, default=[.01], nargs='+',
                     help='Improve factor that an individual can develop at birth')
-parser.add_argument('--init_lifetime', type=int, default=[2], nargs='+',
+parser.add_argument('--init_lifetime', type=int, default=[20], nargs='+',
                     help='Lifetime of the 1st generation')
 parser.add_argument('--repr_rate', '--lambda', type=float, default=[1.5,.5],
                     help='Rate at which an individual reproduces')
@@ -68,6 +72,47 @@ parser.add_argument('--verbose', action='store_true',
 parser.add_argument('--seed', type=int, default=42, 
                     help='For reproducibility reasons')
 
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# SPECIES CLASS
+#
+#
+species = {
+    'wolf': {
+        'name':'wolf',
+        'av_improv_factor':0,
+        'av_prob_improve':0,
+        'av_repr_rate':0,
+        'type':'predator'
+    },
+    'sheep': {
+        'name':'sheep',
+        'av_improv_factor':0,
+        'av_prob_improve':0,
+        'av_repr_rate':0,
+        'type':'prey'
+    }
+}
+# class Species():
+#     def __init__(self, name: str, av_improv_factor, av_prob_improve, av_repr_rate, type_=None, predator_prob: float=None):
+#         self.name = name
+#         # randomly select if the species will be a prey or a predator
+#         assert type_ is not None or predator_prob is not None, 'One between type_ and predator_prob has to be not None'
+#         self.type_ = type_ if type_ is not None else 'prey' if random.random() < predator_prob else 'predator'
+#         self.lst_prey = [] # if the species is a prey this list will remain empty
+        
+#         # factor different for all species (then every individual has also its own stats)
+#         self.av_improv_factor = av_improv_factor
+#         self.av_prob_improve = av_prob_improve
+#         self.av_repr_rate = av_repr_rate
+
+#     # this will add a species to the list of possible prey of this species
+#     def set_prey(self, prey_species):
+#         self.lst_prey.append(prey_species)
+
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# MEASURE CLASS
+#
+#
 class Measure:
     def __init__(self):
         self.num_birth = 0
@@ -82,16 +127,24 @@ class Measure:
         
     def increment_gen_lf(self, gen, lf):
         self.birth_per_gen[gen]['tot lf'] = self.birth_per_gen.setdefault(gen,{'n birth':0, 'tot lf':0})['tot lf']+lf
-        
+
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# WORLD CLASS (LATTICE WITH SOME FUNCTIONS)
+#
+#
 class World(dict):
-    def __init__(self, dim):
-        super().__init__(self.generate_world(dim))
+    def __init__(self, dim,population):
+        super().__init__(self.generate_world(dim,population))
+        self.dim = dim
         
     def __getitem__(self, key):
         return super().__getitem__(key)
         
-    def generate_world(self,dim):
+    def generate_world(self,dim,population):
         world = {(x,y): {'individuals':[], 'neighbors':[]} for x in range(dim) for y in range(dim)}
+        
+        for ind in [ind for pop in population.values() for ind in pop ]:
+            world[ind.current_position]['individuals'].append(ind)
         
         for x in range(dim):
             for y in range(dim):
@@ -103,53 +156,55 @@ class World(dict):
                     world[(x,y+1)]['neighbors'].append((x,y))
         return world
     
-    def make_fight(self):
+    def simulate_fights(self):
+        # iterate over all positions
         for pos in self.values():
-            if len(pos['individuals']) > 1 and 'predator' in [ind.species.type_ for ind in pos['individuals']]:
-                predator = random.choice([ind for ind in pos['individuals'] if ind.species.type_ == 'predator'])
-                if 'prey' in [ind.species.type_ for ind in pos['individuals']]:
-                    prey = random.choice([ind for ind in pos['individuals'] if ind.species.type_ == 'prey'])
-                    print(f'fight between {predator.species.name} and {prey.species.name}')
-        
-class Species():
-    def __init__(self, name: str, av_improv_factor, av_prob_improve, av_repr_rate, type_=None, predator_prob: float=None):
-        self.name = name
-        # randomly select if the species will be a prey or a predator
-        assert type_ is not None or predator_prob is not None, 'One between type_ and predator_prob has to be not None'
-        self.type_ = type_ if type_ is not None else 'prey' if random.random() < predator_prob else 'predator'
-        self.lst_prey = [] # if the species is a prey this list will remain empty
-        
-        # factor different for all species (then every individual has also its own stats)
-        self.av_improv_factor = av_improv_factor
-        self.av_prob_improve = av_prob_improve
-        self.av_repr_rate = av_repr_rate
+            #
+            # for each position check if there are more than one individuals
+            if len(pos['individuals']) > 1:
+                predators = [ind for ind in pos['individuals'] if ind.species['type'] == 'predator']
+                preys = [ind for ind in pos['individuals'] if ind.species['type'] == 'prey']
+                if len(predators) == 0 or len(preys) == 0:
+                    break
+                # each predator wants to hunt a prey
+                # (it can be also model that more than one predator hunt the same prey,
+                #  the winning prob should be higher in that case)
+                for predator in predators:
+                    if len(preys) == 0: break # there's no more prey
+                    prey = random.choice(preys)
+                    preys.remove(prey)
+                    print(f'fight between {predator.species['name']} and {prey.species['name']}')
 
-    # this will add a species to the list of possible prey of this species
-    def set_prey(self, prey_species):
-        self.lst_prey.append(prey_species)
-
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# INDIVIDUAL CLASS
+#
+#
 class Individual():
-    def __init__(self, birth_time, parent_lf, gen, species: Species, initial_position=None, world_dim=None):
+    def __init__(self, birth_time, parent_lf, gen, species: dict, initial_position=None, world_dim=None):
         # self.lam = lam -> in this simplified version all individual share the same lambda
         # so there is no need to store a lambda variable inside this class (maybe add in next version)
         self.gen = gen
         self.birth_time = birth_time
-        self.lifetime = random.uniform(parent_lf, parent_lf*(1+species.av_improv_factor))\
-            if random.random() < species.av_prob_improve else random.uniform(0, parent_lf)
+        self.lifetime = random.uniform(parent_lf, parent_lf*(1+species['av_improv_factor']))\
+            if random.random() < species['av_prob_improve'] else random.uniform(0, parent_lf)
         assert world_dim is not None or initial_position is not None,'At least one between initial_position and world_dim must be not None'
         self.current_position = (random.randint(0,world_dim-1),random.randint(0,world_dim-1)) if initial_position == None else initial_position
         self.species = species
     
     # at every move the individual can move only in a single dimention
-    def move_randomly(self, grid: dict):
+    def move_randomly(self, world: dict):
         old_pos = self.current_position
-        self.current_position = random.choice(grid[self.current_position]['neighbors'])
-        grid[old_pos]['individual'].remove(self)
-        grid[self.current_position]['individual'].append(self)
+        self.current_position = random.choice(world[self.current_position]['neighbors'])
+        world[old_pos]['individuals'].remove(self)
+        world[self.current_position]['individuals'].append(self)
         
     def __str__(self) -> str:
         return f'Birth_time: {self.birth_time:.2f} - Lifetime: {self.lifetime:.2f}'
-    
+
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# EVENT CLASS
+#
+#
 class Event:
     def __init__(self, event_time, event_type, individual: Individual = None):
         self.time = event_time
@@ -159,21 +214,39 @@ class Event:
     def __lt__(self, other):
         return self.time < other.time
 
-def gen_init_population(init_p, improv_factor, init_lifetime):
-    species_1 = Species(name='wolf', type_='predator', av_improv_factor=.01, av_prob_improve=.3, av_repr_rate=1.1)
-    species_2 = Species(name='sheep', type_='prey', av_improv_factor=.001, av_prob_improve=.01, av_repr_rate=1.5)
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# GENERATION OF INITIAL POPULATION
+#
+#
+def gen_init_situation(init_p, improv_factor, init_lifetime):
+    # species_1 = Species(name='wolf', type_='predator', av_improv_factor=.01, av_prob_improve=.3, av_repr_rate=1.1)
+    # species_2 = Species(name='sheep', type_='prey', av_improv_factor=.001, av_prob_improve=.01, av_repr_rate=1.5)
+    species_1 = species['wolf']
+    species_2 = species['sheep']
     
-    population = [Individual(0, parent_lf=init_lifetime, gen=0, species=species_1, world_dim=100) for _ in range(int(init_p * .2))]
-    population.extend([Individual(0, parent_lf=init_lifetime, gen=0, species=species_2, world_dim=100) for _ in range(int(init_p * .8))])
+    population = {
+        'wolf': [Individual(0, parent_lf=init_lifetime, gen=0, species=species_1, world_dim=100) for _ in range(int(init_p * .2))],
+        'sheep': [Individual(0, parent_lf=init_lifetime, gen=0, species=species_2, world_dim=100) for _ in range(int(init_p * .8))]
+    }
+    
     return population
 
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# DEATH EVENT
+#
+#
 # we can schedule a new birth based on len(population) after the new_death
-def death(current_time, population: list, individual, data: Measure):
+def death(current_time, population: dict, individual, data: Measure):
     data.average_pop += len(population)*(current_time - data.time_last_event)
     data.time_last_event = current_time
     data.num_death+=1
-    population.remove(individual)
+    population[individual.species['name']].remove(individual)
+    # population.remove(individual)
 
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# BIRTH EVENT
+#
+#
 # we have to schedule a new death associated to the new_born
 # we can schedule a new birth based on len(population) after the new_born
 def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population, data: Measure):
@@ -181,7 +254,7 @@ def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population
     data.time_last_event = current_time
     
     # check if the parent is still alive because it can be killed 
-    if parent in population:
+    if parent is not None and parent in population[parent.species['name']]:
         data.num_birth += 1
         
         #rand_individual = population[random.randint(0, len(population)-1)]
@@ -190,7 +263,7 @@ def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population
                             prob_improve=p_i,
                             parent_lf=parent.lifetime,
                             gen=parent.gen+1 )
-        population.append(new_born)
+        population[parent.species].append(new_born)
         data.increment_gen_birth(parent.gen)
         data.increment_gen_lf(new_born.gen, new_born.lifetime)
 
@@ -205,15 +278,20 @@ def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population
             birth_time = current_time + random.expovariate(lam)
             FES.put(Event(birth_time, 'birth', new_born))
 
-def simulate(init_p, init_lifetime, world, alpha, lam, p_i, data: Measure):
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# SIMULATION
+#
+#
+def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
     FES = PriorityQueue()
     time = 0
     
-    population = gen_init_population(init_p=init_p,
+    population = gen_init_situation(init_p=init_p,
                                           improv_factor=alpha,
                                           init_lifetime=init_lifetime)
+    world = World(args.grid_dimentions, population)
     
-    for individual in population:
+    for individual in [ind for pop in population.values() for ind in pop]:
         data.increment_gen_lf(individual.gen, individual.lifetime)
         FES.put(Event(individual.lifetime, 'death', individual))
     
@@ -267,14 +345,24 @@ def simulate(init_p, init_lifetime, world, alpha, lam, p_i, data: Measure):
                   population=population,
                   individual=individual,
                   data=data)
-        print(f'N individuals: {len(population)} - time: {time:.4f}', end='\r')
+            
+        if int(time) % 2 == 0:
+            for ind in [ind for pop in population.values() for ind in pop ]:
+                ind.move_randomly(world)
+            world.simulate_fights()
+        # print(f'N individuals: {len(population)} - time: {time:.4f}', end='\r')
         
         if len(population) % 5 == 0:
             data.time_size_pop.append((time,len(population)))
-        
+    
+    print(f'End {time = :.2f}')
     return time
     # pbar.close()
-    
+
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# PLOT RESULTS
+#
+#
 def plot_gen_birth(time_size_pop: list, gen_stats: dict, folder_path, init_p, init_lifetime, alpha, lam, p_i):
     folder_str = f'in_p_{init_p}_in_lt_{init_lifetime}_a_{alpha}_l_{lam}_p_i_{p_i}'
     graph_path = os.path.join(folder_path, folder_str)
@@ -338,14 +426,11 @@ def plot_gen_birth(time_size_pop: list, gen_stats: dict, folder_path, init_p, in
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
 
-#-----------------------------------------------------------------------------------------------------------#
-# MAIN METHOD
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# CREATE OUTPUT FOLDER
 #
-#
-if __name__ == '__main__':
-    args = parser.parse_args()
-    print(f'Input parameters: {vars(args)}')
-    
+#   
+def create_folder_path():
     # CREATE OUTPUT FOLDER
     #
     script_directory = os.path.dirname(os.path.abspath(__file__))
@@ -355,6 +440,17 @@ if __name__ == '__main__':
         os.makedirs(folder_path)
         
     print(f'Output images will be saved in the folder: {folder_path}')
+    return folder_path
+
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# MAIN METHOD
+#
+#
+if __name__ == '__main__':
+    args = parser.parse_args()
+    print(f'Input parameters: {vars(args)}')
+    
+    #folder_path = create_folder_path()
     
     random.seed(args.seed)
     
@@ -370,12 +466,10 @@ if __name__ == '__main__':
     
     for init_p, init_lifetime, alpha, lam, p_i in params:
         
-        world = World(args.grid_dimentions)
         data = Measure()
         print(f'Simulate with init_p={init_p} - init_lifetime={init_lifetime} - alpha={alpha} - lambda={lam} - p_i={p_i}')
         end_time = simulate(init_p=init_p,
                 init_lifetime=init_lifetime,
-                world=world,
                 alpha=alpha,
                 lam=lam,
                 p_i=p_i,
@@ -395,10 +489,10 @@ if __name__ == '__main__':
         }
         results.append(pd.DataFrame([result]))
         
-        if len(data.birth_per_gen) > 7:
-            plot_gen_birth(data.time_size_pop,data.birth_per_gen, folder_path, init_p, init_lifetime, alpha, lam, p_i)
+        # if len(data.birth_per_gen) > 7:
+        #     plot_gen_birth(data.time_size_pop,data.birth_per_gen, folder_path, init_p, init_lifetime, alpha, lam, p_i)
     
     result_df = pd.concat(results, ignore_index=True)
     
-    file_name = os.path.join(folder_path, 'results.csv')
-    result_df.to_csv(file_name)
+    #file_name = os.path.join(folder_path, 'results.csv')
+    #result_df.to_csv(file_name)
