@@ -83,30 +83,69 @@ class Measure:
     def increment_gen_lf(self, gen, lf):
         self.birth_per_gen[gen]['tot lf'] = self.birth_per_gen.setdefault(gen,{'n birth':0, 'tot lf':0})['tot lf']+lf
         
+class World(dict):
+    def __init__(self, dim):
+        super().__init__(self.generate_world(dim))
+        
+    def __getitem__(self, key):
+        return super().__getitem__(key)
+        
+    def generate_world(self,dim):
+        world = {(x,y): {'individuals':[], 'neighbors':[]} for x in range(dim) for y in range(dim)}
+        
+        for x in range(dim):
+            for y in range(dim):
+                if x+1 < dim:
+                    world[(x,y)]['neighbors'].append((x+1,y))
+                    world[(x+1,y)]['neighbors'].append((x,y))
+                if y+1 < dim:
+                    world[(x,y)]['neighbors'].append((x,y+1))
+                    world[(x,y+1)]['neighbors'].append((x,y))
+        return world
+    
+    def make_fight(self):
+        for pos in self.values():
+            if len(pos['individuals']) > 1 and 'predator' in [ind.species.type_ for ind in pos['individuals']]:
+                predator = random.choice([ind for ind in pos['individuals'] if ind.species.type_ == 'predator'])
+                if 'prey' in [ind.species.type_ for ind in pos['individuals']]:
+                    prey = random.choice([ind for ind in pos['individuals'] if ind.species.type_ == 'prey'])
+                    print(f'fight between {predator.species.name} and {prey.species.name}')
+        
 class Species():
-    def __init__(self, predator_prob):
+    def __init__(self, name: str, av_improv_factor, av_prob_improve, av_repr_rate, type_=None, predator_prob: float=None):
+        self.name = name
         # randomly select if the species will be a prey or a predator
-        self.species_type = 'prey' if random.random() < predator_prob else 'predator'
+        assert type_ is not None or predator_prob is not None, 'One between type_ and predator_prob has to be not None'
+        self.type_ = type_ if type_ is not None else 'prey' if random.random() < predator_prob else 'predator'
         self.lst_prey = [] # if the species is a prey this list will remain empty
+        
+        # factor different for all species (then every individual has also its own stats)
+        self.av_improv_factor = av_improv_factor
+        self.av_prob_improve = av_prob_improve
+        self.av_repr_rate = av_repr_rate
 
     # this will add a species to the list of possible prey of this species
     def set_prey(self, prey_species):
         self.lst_prey.append(prey_species)
 
 class Individual():
-    def __init__(self, birth_time, alpha, p_i, parent_lf, gen, initial_position, species: Species):
+    def __init__(self, birth_time, parent_lf, gen, species: Species, initial_position=None, world_dim=None):
         # self.lam = lam -> in this simplified version all individual share the same lambda
         # so there is no need to store a lambda variable inside this class (maybe add in next version)
         self.gen = gen
         self.birth_time = birth_time
-        self.lifetime = random.uniform(parent_lf, parent_lf*(1+alpha))\
-            if random.random() < p_i else random.uniform(0, parent_lf)
-        self.current_position = initial_position
+        self.lifetime = random.uniform(parent_lf, parent_lf*(1+species.av_improv_factor))\
+            if random.random() < species.av_prob_improve else random.uniform(0, parent_lf)
+        assert world_dim is not None or initial_position is not None,'At least one between initial_position and world_dim must be not None'
+        self.current_position = (random.randint(0,world_dim-1),random.randint(0,world_dim-1)) if initial_position == None else initial_position
         self.species = species
     
-    # at every move the individual can move only in a single dimention     
-    def move_randomly(self, grid: tuple):
-        return
+    # at every move the individual can move only in a single dimention
+    def move_randomly(self, grid: dict):
+        old_pos = self.current_position
+        self.current_position = random.choice(grid[self.current_position]['neighbors'])
+        grid[old_pos]['individual'].remove(self)
+        grid[self.current_position]['individual'].append(self)
         
     def __str__(self) -> str:
         return f'Birth_time: {self.birth_time:.2f} - Lifetime: {self.lifetime:.2f}'
@@ -120,12 +159,13 @@ class Event:
     def __lt__(self, other):
         return self.time < other.time
 
-def gen_init_population(init_p, alpha, init_lifetime):
-    return [Individual(0, # born all at the same time
-                       alpha=alpha, 
-                       p_i=0, # the 1st gen can't improve
-                       parent_lf=init_lifetime,
-                       gen=0) for _ in range(init_p)]
+def gen_init_population(init_p, improv_factor, init_lifetime):
+    species_1 = Species(name='wolf', type_='predator', av_improv_factor=.01, av_prob_improve=.3, av_repr_rate=1.1)
+    species_2 = Species(name='sheep', type_='prey', av_improv_factor=.001, av_prob_improve=.01, av_repr_rate=1.5)
+    
+    population = [Individual(0, parent_lf=init_lifetime, gen=0, species=species_1, world_dim=100) for _ in range(int(init_p * .2))]
+    population.extend([Individual(0, parent_lf=init_lifetime, gen=0, species=species_2, world_dim=100) for _ in range(int(init_p * .8))])
+    return population
 
 # we can schedule a new birth based on len(population) after the new_death
 def death(current_time, population: list, individual, data: Measure):
@@ -146,8 +186,8 @@ def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population
         
         #rand_individual = population[random.randint(0, len(population)-1)]
         new_born = Individual(birth_time=current_time,
-                            alpha=alpha,
-                            p_i=p_i,
+                            improv_factor=alpha,
+                            prob_improve=p_i,
                             parent_lf=parent.lifetime,
                             gen=parent.gen+1 )
         population.append(new_born)
@@ -164,27 +204,13 @@ def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population
             # schedule a new birth event with the new len(population)
             birth_time = current_time + random.expovariate(lam)
             FES.put(Event(birth_time, 'birth', new_born))
-            
-def generate_world(dim):
-    world = {(x,y): {'individual':[], 'neighbors':[]} for x in range(dim) for y in range(dim)}
-    
-    for x in range(dim):
-        for y in range(dim):
-            if x+1 < dim:
-                world[(x,y)]['neighbors'].append((x+1,y))
-                world[(x+1,y)]['neighbors'].append((x,y))
-            if y+1 < dim:
-                world[(x,y)]['neighbors'].append((x,y+1))
-                world[(x,y+1)]['neighbors'].append((x,y))
 
-def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
+def simulate(init_p, init_lifetime, world, alpha, lam, p_i, data: Measure):
     FES = PriorityQueue()
     time = 0
     
-    world = generate_world(args.grid_dimentions)
-    
     population = gen_init_population(init_p=init_p,
-                                          alpha=alpha,
+                                          improv_factor=alpha,
                                           init_lifetime=init_lifetime)
     
     for individual in population:
@@ -343,10 +369,13 @@ if __name__ == '__main__':
     print(f'params combination: {len(params)}')
     
     for init_p, init_lifetime, alpha, lam, p_i in params:
+        
+        world = World(args.grid_dimentions)
         data = Measure()
         print(f'Simulate with init_p={init_p} - init_lifetime={init_lifetime} - alpha={alpha} - lambda={lam} - p_i={p_i}')
         end_time = simulate(init_p=init_p,
                 init_lifetime=init_lifetime,
+                world=world,
                 alpha=alpha,
                 lam=lam,
                 p_i=p_i,
