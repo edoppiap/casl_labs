@@ -79,16 +79,18 @@ parser.add_argument('--seed', type=int, default=42,
 species = {
     'wolf': {
         'name':'wolf',
-        'av_improv_factor':0,
-        'av_prob_improve':0,
-        'av_repr_rate':0,
+        'init_lifetime':356 * 5, # 5 years
+        'av_improv_factor':.2,
+        'av_prob_improve':.6,
+        'av_repr_rate':1.5,
         'type':'predator'
     },
     'sheep': {
         'name':'sheep',
-        'av_improv_factor':0,
-        'av_prob_improve':0,
-        'av_repr_rate':0,
+        'init_lifetime':356 * 7, # 7 years
+        'av_improv_factor':.1,
+        'av_prob_improve':.3,
+        'av_repr_rate':2.5, 
         'type':'prey'
     }
 }
@@ -168,6 +170,31 @@ class World(dict):
                     # else:
                     #     # prey wins
                     #     print(f'The sheep is gone away')
+                    
+class Population(dict):
+    def __init__(self, init_p):
+        super().__init__(self.gen_init_situation(init_p))
+        
+    #--------------------------------------------------------------------------------------------------------------------------------------------#
+    # GENERATION OF INITIAL POPULATION
+    #
+    #
+    def gen_init_situation(self,init_p):
+        species_1 = species['wolf']
+        species_2 = species['sheep']
+        
+        population = {
+            'wolf': [Individual(0, parent_lf=species_1['init_lifetime'], gen=0, species=species_1, world_dim=100) for _ in range(int(init_p * .2))],
+            'sheep': [Individual(0, parent_lf=species_2['init_lifetime'], gen=0, species=species_2, world_dim=100) for _ in range(int(init_p * .8))]
+        }
+        
+        return population
+    
+    def __len__(self) -> int:
+        n_individuals = 0
+        for individuals in self.values():
+            n_individuals += len(individuals)
+        return n_individuals
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # INDIVIDUAL CLASS
@@ -217,21 +244,6 @@ class Event:
         return self.time < other.time
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
-# GENERATION OF INITIAL POPULATION
-#
-#
-def gen_init_situation(init_p, improv_factor, init_lifetime):
-    species_1 = species['wolf']
-    species_2 = species['sheep']
-    
-    population = {
-        'wolf': [Individual(0, parent_lf=init_lifetime, gen=0, species=species_1, world_dim=100) for _ in range(int(init_p * .2))],
-        'sheep': [Individual(0, parent_lf=init_lifetime, gen=0, species=species_2, world_dim=100) for _ in range(int(init_p * .8))]
-    }
-    
-    return population
-
-#--------------------------------------------------------------------------------------------------------------------------------------------#
 # DEATH EVENT
 #
 #
@@ -253,7 +265,7 @@ def death(current_time, population: dict, individual, data: Measure, world: Worl
 #
 # we have to schedule a new death associated to the new_born
 # we can schedule a new birth based on len(population) after the new_born
-def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population, data: Measure, world: World):
+def birth(current_time, parent, FES: PriorityQueue, population, data: Measure, world: World):
     data.average_pop += len(population)*(current_time - data.time_last_event)
     data.time_last_event = current_time
     
@@ -282,24 +294,21 @@ def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population
         birth_time = current_time
         while birth_time < death_time:
             # schedule a new birth event with the new len(population)
-            birth_time += random.expovariate(lam)
+            birth_time += random.expovariate(new_born.species['av_repr_rate'])
             FES.put(Event(birth_time, 'birth', new_born))
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # SIMULATION
 #
 #
-def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
+def simulate(init_p, data: Measure):
     FES = PriorityQueue()
     time = 0
     
-    population = gen_init_situation(init_p=init_p,
-                                          improv_factor=alpha,
-                                          init_lifetime=init_lifetime)
+    population = Population(init_p=init_p)
     world = World(args.grid_dimentions, population)
     
-    all_population = [ind for pop in population.values() for ind in pop]
-    for individual in all_population:
+    for individual in [ind for pop in population.values() for ind in pop]:
         data.increment_gen_lf(individual.gen, individual.lifetime)
         FES.put(Event(individual.lifetime, 'death', individual))
     
@@ -318,22 +327,19 @@ def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
     # EVENT LOOP
     #
     while not FES.empty():
-        if len(all_population) == 0 or len(all_population) > args.max_population or time > args.sim_time:
+        if len(population) == 0 or len(population) > args.max_population or time > args.sim_time:
             break
         
         event = FES.get()
         
         time = event.time
         
-        print(f'{len(all_population) = :.2f}', end='\r')
+        print(f'{len(population) = }', end='\r')
         
         if event.type == 'birth':
             birth(current_time=time,
                   parent=event.individual,
                   FES=FES,
-                  lam=lam,
-                  alpha=alpha,
-                  p_i=p_i,
                   population=population,
                   data=data,
                   world=world)
@@ -344,8 +350,6 @@ def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
                   individual=individual,
                   data=data,
                   world=world)
-            
-        all_population = [ind for pop in population.values() for ind in pop]
             
         #----------------------------------------------------------------#
         # move randomly every two days
@@ -493,10 +497,6 @@ if __name__ == '__main__':
         data = Measure()
         print(f'Simulate with init_p={init_p} - init_lifetime={init_lifetime} - alpha={alpha} - lambda={lam} - p_i={p_i}')
         end_time = simulate(init_p=init_p,
-                init_lifetime=init_lifetime,
-                alpha=alpha,
-                lam=lam,
-                p_i=p_i,
                 data=data)
         
         result = {
