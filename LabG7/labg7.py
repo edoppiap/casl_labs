@@ -45,23 +45,23 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
 # Population parameters
-parser.add_argument('--prob_improve', '--p_i', type=float, default=[.2,.8], nargs='+',
+parser.add_argument('--prob_improve', '--p_i', type=float, default=[.8], nargs='+',
                     help='Probability of improvement of the lifetime')
 parser.add_argument('--init_population', '--p', type=int, default=[2000], nargs='+',
                     help='Number of individuals for the 1st generation')
-parser.add_argument('--improve_factor', '--alpha', type=float, default=[.01], nargs='+',
+parser.add_argument('--improve_factor', '--alpha', type=float, default=[.5], nargs='+',
                     help='Improve factor that an individual can develop at birth')
-parser.add_argument('--init_lifetime', type=int, default=[20], nargs='+',
+parser.add_argument('--init_lifetime', type=int, default=[356 * 3], nargs='+', # 3 years
                     help='Lifetime of the 1st generation')
-parser.add_argument('--repr_rate', '--lambda', type=float, default=[1.5,.5],
+parser.add_argument('--repr_rate', '--lambda', type=float, default=[1.5],
                     help='Rate at which an individual reproduces')
-parser.add_argument('--max_population', type=int, default=15_000,
+parser.add_argument('--max_population', type=int, default=5_000,
                     help='This semplified version need a limit otherwise will infinite grow')
 parser.add_argument('--grid_dimentions', type=int, default=100, 
                     help='Side of the square of the grid dimension')
 
 # Simulation parameters
-parser.add_argument('--sim_time', type=int, default=1000,
+parser.add_argument('--sim_time', type=int, default=1_000,
                     help='Time to run the simulation')
 parser.add_argument('--accuracy_threshold', type=float, default=.8,
                     help='Accuracy value for which we accept the result')
@@ -92,22 +92,6 @@ species = {
         'type':'prey'
     }
 }
-# class Species():
-#     def __init__(self, name: str, av_improv_factor, av_prob_improve, av_repr_rate, type_=None, predator_prob: float=None):
-#         self.name = name
-#         # randomly select if the species will be a prey or a predator
-#         assert type_ is not None or predator_prob is not None, 'One between type_ and predator_prob has to be not None'
-#         self.type_ = type_ if type_ is not None else 'prey' if random.random() < predator_prob else 'predator'
-#         self.lst_prey = [] # if the species is a prey this list will remain empty
-        
-#         # factor different for all species (then every individual has also its own stats)
-#         self.av_improv_factor = av_improv_factor
-#         self.av_prob_improve = av_prob_improve
-#         self.av_repr_rate = av_repr_rate
-
-#     # this will add a species to the list of possible prey of this species
-#     def set_prey(self, prey_species):
-#         self.lst_prey.append(prey_species)
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # MEASURE CLASS
@@ -119,7 +103,11 @@ class Measure:
         self.num_death = 0
         self.average_pop = 0
         self.time_last_event = 0
-        self.time_size_pop = []
+        self.time_size_pop = {
+            'time':[0],
+            'wolf':[400],
+            'sheep':[1600]
+        }
         self.birth_per_gen = {}
         
     def increment_gen_birth(self, gen):
@@ -156,7 +144,7 @@ class World(dict):
                     world[(x,y+1)]['neighbors'].append((x,y))
         return world
     
-    def simulate_fights(self):
+    def simulate_fights(self, FES, current_time):
         # iterate over all positions
         for pos in self.values():
             #
@@ -173,7 +161,13 @@ class World(dict):
                     if len(preys) == 0: break # there's no more prey
                     prey = random.choice(preys)
                     preys.remove(prey)
-                    print(f'fight between {predator.species['name']} and {prey.species['name']}')
+                    if random.random() < .5:
+                        # predator wins
+                        death_event = Event(current_time, 'death', prey)
+                        FES.put(death_event)
+                    # else:
+                    #     # prey wins
+                    #     print(f'The sheep is gone away')
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # INDIVIDUAL CLASS
@@ -193,9 +187,17 @@ class Individual():
     
     # at every move the individual can move only in a single dimention
     def move_randomly(self, world: dict):
-        old_pos = self.current_position
+        old_position = self.current_position
+        if self not in world[old_position]['individuals']:
+            print(f'{self} non è in {self.current_position} come dovrebbe essere')
+            trovato = False
+            for position in world.keys():
+                if self in world[position]['individuals']:
+                    print(f'{self} è in {position}')
+                    trovato = True
+            if not trovato: print(f'{self} non è più in world')
         self.current_position = random.choice(world[self.current_position]['neighbors'])
-        world[old_pos]['individuals'].remove(self)
+        world[old_position]['individuals'].remove(self)
         world[self.current_position]['individuals'].append(self)
         
     def __str__(self) -> str:
@@ -219,8 +221,6 @@ class Event:
 #
 #
 def gen_init_situation(init_p, improv_factor, init_lifetime):
-    # species_1 = Species(name='wolf', type_='predator', av_improv_factor=.01, av_prob_improve=.3, av_repr_rate=1.1)
-    # species_2 = Species(name='sheep', type_='prey', av_improv_factor=.001, av_prob_improve=.01, av_repr_rate=1.5)
     species_1 = species['wolf']
     species_2 = species['sheep']
     
@@ -236,11 +236,15 @@ def gen_init_situation(init_p, improv_factor, init_lifetime):
 #
 #
 # we can schedule a new birth based on len(population) after the new_death
-def death(current_time, population: dict, individual, data: Measure):
-    data.average_pop += len(population)*(current_time - data.time_last_event)
-    data.time_last_event = current_time
-    data.num_death+=1
-    population[individual.species['name']].remove(individual)
+def death(current_time, population: dict, individual, data: Measure, world: World):
+    if individual in population[individual.species['name']]:
+        data.average_pop += len(population)*(current_time - data.time_last_event)
+        data.time_last_event = current_time
+        data.num_death+=1
+        population[individual.species['name']].remove(individual)
+        world[individual.current_position]['individuals'].remove(individual)
+    else:
+        print(f'Already dead', end='\r')
     # population.remove(individual)
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
@@ -249,21 +253,24 @@ def death(current_time, population: dict, individual, data: Measure):
 #
 # we have to schedule a new death associated to the new_born
 # we can schedule a new birth based on len(population) after the new_born
-def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population, data: Measure):
+def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population, data: Measure, world: World):
     data.average_pop += len(population)*(current_time - data.time_last_event)
     data.time_last_event = current_time
     
     # check if the parent is still alive because it can be killed 
-    if parent is not None and parent in population[parent.species['name']]:
+    name = parent.species['name']
+    pop = population[name]
+    if parent is not None and parent in pop:
         data.num_birth += 1
         
         #rand_individual = population[random.randint(0, len(population)-1)]
         new_born = Individual(birth_time=current_time,
-                            improv_factor=alpha,
-                            prob_improve=p_i,
                             parent_lf=parent.lifetime,
-                            gen=parent.gen+1 )
-        population[parent.species].append(new_born)
+                            gen=parent.gen+1,
+                            species=parent.species,
+                            initial_position=parent.current_position)
+        world[new_born.current_position]['individuals'].append(new_born)
+        population[name].append(new_born)
         data.increment_gen_birth(parent.gen)
         data.increment_gen_lf(new_born.gen, new_born.lifetime)
 
@@ -275,7 +282,7 @@ def birth(current_time, parent, FES: PriorityQueue, lam,  alpha, p_i, population
         birth_time = current_time
         while birth_time < death_time:
             # schedule a new birth event with the new len(population)
-            birth_time = current_time + random.expovariate(lam)
+            birth_time += random.expovariate(lam)
             FES.put(Event(birth_time, 'birth', new_born))
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
@@ -291,7 +298,8 @@ def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
                                           init_lifetime=init_lifetime)
     world = World(args.grid_dimentions, population)
     
-    for individual in [ind for pop in population.values() for ind in pop]:
+    all_population = [ind for pop in population.values() for ind in pop]
+    for individual in all_population:
         data.increment_gen_lf(individual.gen, individual.lifetime)
         FES.put(Event(individual.lifetime, 'death', individual))
     
@@ -300,35 +308,24 @@ def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
     birth_time = random.expovariate(lam*len(population))
         
     # first event to start the simulation
-    first_repr = Event(birth_time, 'birth')
-    FES.put(first_repr)
-    
-    # pbar = tqdm(total=args.sim_time,
-    #             desc=f'Simulating natural selection',
-    #             postfix=len(population),
-    #             bar_format='{l_bar}{bar:30}{n:.0f}s/{total}s [{elapsed}<{remaining}, {rate_fmt}, n indivisuals: {postfix}]')
+    for species in population.keys():
+        first_parent = random.choice(population[species])
+        print(f'Primo nato è un {first_parent.species}')
+        first_repr = Event(birth_time, 'birth', individual=first_parent)
+        FES.put(first_repr)
     
     #----------------------------------------------------------------#
     # EVENT LOOP
     #
     while not FES.empty():
-        if len(population) == 0 or len(population) > args.max_population or time > args.sim_time:
+        if len(all_population) == 0 or len(all_population) > args.max_population or time > args.sim_time:
             break
         
         event = FES.get()
         
-        # pbar.postfix = len(population)
-        # if event.time < args.sim_time: # to prevent a warning to appear
-        #     pbar.update(event.time - time)
-        # else:
-        #     pbar.update(args.sim_time - time)
-        # size_pop = len(population)
         time = event.time
-        # if size_pop > 10_000:
-        #     temp = list(FES.queue)
-        #     n_birth = sum(1 for event in temp if event.type == 'birth')
-        #     n_death = sum(1 for event in temp if event.type == 'death')
-        #     pass
+        
+        print(f'{len(all_population) = :.2f}', end='\r')
         
         if event.type == 'birth':
             birth(current_time=time,
@@ -338,36 +335,59 @@ def simulate(init_p, init_lifetime, alpha, lam, p_i, data: Measure):
                   alpha=alpha,
                   p_i=p_i,
                   population=population,
-                  data=data)
+                  data=data,
+                  world=world)
         elif event.type == 'death':
             individual = event.individual
             death(current_time=time,
                   population=population,
                   individual=individual,
-                  data=data)
+                  data=data,
+                  world=world)
             
-        if int(time) % 2 == 0:
+        all_population = [ind for pop in population.values() for ind in pop]
+            
+        #----------------------------------------------------------------#
+        # move randomly every two days
+        #
+        if int(time) in range(0,args.sim_time,2):
             for ind in [ind for pop in population.values() for ind in pop ]:
                 ind.move_randomly(world)
-            world.simulate_fights()
-        # print(f'N individuals: {len(population)} - time: {time:.4f}', end='\r')
+            world.simulate_fights(FES, time)
         
-        if len(population) % 5 == 0:
-            data.time_size_pop.append((time,len(population)))
+        # if len(population['wolf']) % 5 == 0:
+        #data.time_size_pop.append((time,len(population)))
+        data.time_size_pop['time'].append(time)
+        data.time_size_pop['wolf'].append(len(population['wolf']))
+        data.time_size_pop['sheep'].append(len(population['sheep']))
     
     print(f'End {time = :.2f}')
     return time
-    # pbar.close()
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # PLOT RESULTS
 #
 #
-def plot_gen_birth(time_size_pop: list, gen_stats: dict, folder_path, init_p, init_lifetime, alpha, lam, p_i):
-    folder_str = f'in_p_{init_p}_in_lt_{init_lifetime}_a_{alpha}_l_{lam}_p_i_{p_i}'
-    graph_path = os.path.join(folder_path, folder_str)
-    if not os.path.exists(graph_path):
-        os.makedirs(graph_path)
+def plot_num_ind(time_size_pop: dict):
+    plt.figure(figsize=(12,8))
+    plt.plot(time_size_pop['time'],time_size_pop['wolf'],label='Wolf')
+    plt.plot(time_size_pop['time'],time_size_pop['sheep'],label='Sheep')
+    plt.xlabel('Time (days)')
+    plt.ylabel('Size of population')
+    plt.grid()
+    plt.legend()
+    plt.show()
+
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# PLOT RESULTS
+#
+#
+def plot_gen_birth(time_size_pop: list, gen_stats: dict, init_p, init_lifetime, alpha, lam, p_i, folder_path=None):
+    if folder_path is not None:
+        folder_str = f'in_p_{init_p}_in_lt_{init_lifetime}_a_{alpha}_l_{lam}_p_i_{p_i}'
+        graph_path = os.path.join(folder_path, folder_str)
+        if not os.path.exists(graph_path):
+            os.makedirs(graph_path)
         
     t = [t for t,_ in time_size_pop]
     n_pop = [pop for _,pop in time_size_pop]
@@ -378,9 +398,10 @@ def plot_gen_birth(time_size_pop: list, gen_stats: dict, folder_path, init_p, in
     plt.ylabel('Size of population')
     plt.title(f'Size of the population over time (init_n={init_p}, init_lifetime={init_lifetime}, alpha={alpha}, lam={lam}, p_i={p_i})')
     plt.grid(True)
-    file_name = os.path.join(graph_path, 'pop_time')
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.close()
+    # file_name = os.path.join(graph_path, 'pop_time')
+    # plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    # plt.close()
+    plt.show()
     
     plt.figure(figsize=(12,8))
     plt.bar(list(gen_stats.keys()), [gen['n birth'] for gen in gen_stats.values()])
@@ -389,9 +410,10 @@ def plot_gen_birth(time_size_pop: list, gen_stats: dict, folder_path, init_p, in
     plt.title('Total number of children for generation '\
         +f'(init_n={init_p}, init_lifetime={init_lifetime}, alpha={alpha}, lam={lam}, p_i={p_i})')
     plt.grid(True, axis='y')
-    file_name = os.path.join(graph_path, 'tot')
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.close()
+    # file_name = os.path.join(graph_path, 'tot')
+    # plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    # plt.close()
+    plt.show()
     
     av_lf = []    
     av_num_child = []
@@ -411,9 +433,10 @@ def plot_gen_birth(time_size_pop: list, gen_stats: dict, folder_path, init_p, in
     plt.title(f'Average lifetime for generation'\
         +f'(init_n={init_p}, init_lifetime={init_lifetime}, alpha={alpha}, lam={lam}, p_i={p_i})')
     plt.grid(True, axis='y')
-    file_name = os.path.join(graph_path, 'lf')
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.close()
+    # file_name = os.path.join(graph_path, 'lf')
+    # plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    # plt.close()
+    plt.show()
     
     plt.figure(figsize=(12,8))
     plt.bar(range(len(av_num_child)), av_num_child)
@@ -422,10 +445,11 @@ def plot_gen_birth(time_size_pop: list, gen_stats: dict, folder_path, init_p, in
     plt.title('Average number of children for generation'\
         +f'(init_n={init_p}, init_lifetime={init_lifetime}, alpha={alpha}, lam={lam}, p_i={p_i})')
     plt.grid(True, axis='y')
-    file_name = os.path.join(graph_path, 'av')
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.close()
-
+    # file_name = os.path.join(graph_path, 'av')
+    # plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    # plt.close()
+    plt.show()
+    
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # CREATE OUTPUT FOLDER
 #
@@ -488,6 +512,7 @@ if __name__ == '__main__':
             'end_time': end_time
         }
         results.append(pd.DataFrame([result]))
+        plot_num_ind(data.time_size_pop)
         
         # if len(data.birth_per_gen) > 7:
         #     plot_gen_birth(data.time_size_pop,data.birth_per_gen, folder_path, init_p, init_lifetime, alpha, lam, p_i)
