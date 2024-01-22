@@ -82,7 +82,7 @@ species = {
         'init_lifetime':356 * 5, # 5 years
         'av_improv_factor':.2,
         'av_prob_improve':.6,
-        'av_repr_rate':1.5,
+        'av_repr_rate':1.5, # TODO: repr_rate should depends on lifetime
         'type':'predator'
     },
     'sheep': {
@@ -90,7 +90,7 @@ species = {
         'init_lifetime':356 * 7, # 7 years
         'av_improv_factor':.1,
         'av_prob_improve':.3,
-        'av_repr_rate':2.5, 
+        'av_repr_rate':1.5, # TODO: repr_rate should depends on lifetime
         'type':'prey'
     }
 }
@@ -105,12 +105,9 @@ class Measure:
         self.num_death = 0
         self.average_pop = 0
         self.time_last_event = 0
-        self.time_size_pop = {
-            'time':[0],
-            'wolf':[400],
-            'sheep':[1600]
-        }
+        self.time_size_pop = {}
         self.birth_per_gen = {}
+        self.num_win = []
         
     def increment_gen_birth(self, gen):
         self.birth_per_gen[gen]['n birth'] = self.birth_per_gen.setdefault(gen,{'n birth':0, 'tot lf':0})['n birth']+1
@@ -146,7 +143,19 @@ class World(dict):
                     world[(x,y+1)]['neighbors'].append((x,y))
         return world
     
-    def simulate_fights(self, FES, current_time):
+    #----------------------------------------------------------------#
+    # MOVE RANDOMLY ALL THE INDIVIDUALS
+    #
+    # an individual can move only in a single dimension
+    def move_randomly(self):
+        for pos in self.values():
+            for individual in pos['individuals']:
+                new_position = random.choice(pos['neighbors'])
+                pos['individuals'].remove(individual)
+                self[new_position]['individuals'].append(individual)
+                individual.current_position = new_position
+    
+    def simulate_fights(self, FES, current_time, data):
         # iterate over all positions
         for pos in self.values():
             #
@@ -155,7 +164,7 @@ class World(dict):
                 predators = [ind for ind in pos['individuals'] if ind.species['type'] == 'predator']
                 preys = [ind for ind in pos['individuals'] if ind.species['type'] == 'prey']
                 if len(predators) == 0 or len(preys) == 0:
-                    break
+                    break # there is no change to have a fight TODO: models if two individuals of the same species can fight eachother
                 # each predator wants to hunt a prey
                 # (it can be also model that more than one predator hunt the same prey,
                 #  the winning prob should be higher in that case)
@@ -163,38 +172,40 @@ class World(dict):
                     if len(preys) == 0: break # there's no more prey
                     prey = random.choice(preys)
                     preys.remove(prey)
-                    if random.random() < .5:
+                    if random.random() < .5: # TODO: the winning prob should be 1) an input or 2) a parameters given by the inds chars
                         # predator wins
                         death_event = Event(current_time, 'death', prey)
                         FES.put(death_event)
-                    # else:
-                    #     # prey wins
-                    #     print(f'The sheep is gone away')
-                    
+                        data.num_win.append((1,0))
+                    else:
+                        data.num_win.append((0,1))
+                    #     # TODO: models what happen to the predator when it loses
+
+#--------------------------------------------------------------------------------------------------------------------------------------------#
+# POPULATION CLASS (DICT WITH SOME FUNCTIONS)
+#
+#      
 class Population(dict):
     def __init__(self, init_p):
         super().__init__(self.gen_init_situation(init_p))
         
-    #--------------------------------------------------------------------------------------------------------------------------------------------#
+    #---------------------------------------------------------------------#
     # GENERATION OF INITIAL POPULATION
     #
     #
     def gen_init_situation(self,init_p):
-        species_1 = species['wolf']
-        species_2 = species['sheep']
+        
+        init_ps = [int(init_p * .2), int(init_p * .8)] # 20% wolf - 80% sheep
         
         population = {
-            'wolf': [Individual(0, parent_lf=species_1['init_lifetime'], gen=0, species=species_1, world_dim=100) for _ in range(int(init_p * .2))],
-            'sheep': [Individual(0, parent_lf=species_2['init_lifetime'], gen=0, species=species_2, world_dim=100) for _ in range(int(init_p * .8))]
-        }
+            specie: [Individual(0, parent_lf=species[specie]['init_lifetime'], gen=0, species=species[specie], world_dim=100) for _ in range(n_p)] 
+            for specie,n_p in zip(species, init_ps)
+            }
         
         return population
     
     def __len__(self) -> int:
-        n_individuals = 0
-        for individuals in self.values():
-            n_individuals += len(individuals)
-        return n_individuals
+        return sum(len(individuals) for individuals in self.values())
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # INDIVIDUAL CLASS
@@ -202,8 +213,6 @@ class Population(dict):
 #
 class Individual():
     def __init__(self, birth_time, parent_lf, gen, species: dict, initial_position=None, world_dim=None):
-        # self.lam = lam -> in this simplified version all individual share the same lambda
-        # so there is no need to store a lambda variable inside this class (maybe add in next version)
         self.gen = gen
         self.birth_time = birth_time
         self.lifetime = random.uniform(parent_lf, parent_lf*(1+species['av_improv_factor']))\
@@ -211,21 +220,7 @@ class Individual():
         assert world_dim is not None or initial_position is not None,'At least one between initial_position and world_dim must be not None'
         self.current_position = (random.randint(0,world_dim-1),random.randint(0,world_dim-1)) if initial_position == None else initial_position
         self.species = species
-    
-    # at every move the individual can move only in a single dimention
-    def move_randomly(self, world: dict):
-        old_position = self.current_position
-        if self not in world[old_position]['individuals']:
-            print(f'{self} non è in {self.current_position} come dovrebbe essere')
-            trovato = False
-            for position in world.keys():
-                if self in world[position]['individuals']:
-                    print(f'{self} è in {position}')
-                    trovato = True
-            if not trovato: print(f'{self} non è più in world')
-        self.current_position = random.choice(world[self.current_position]['neighbors'])
-        world[old_position]['individuals'].remove(self)
-        world[self.current_position]['individuals'].append(self)
+        # TODO: make repr_rate, prob_improve and improv_factor random for each individual
         
     def __str__(self) -> str:
         return f'Birth_time: {self.birth_time:.2f} - Lifetime: {self.lifetime:.2f}'
@@ -319,9 +314,7 @@ def simulate(init_p, data: Measure):
     # first event to start the simulation
     for species in population.keys():
         first_parent = random.choice(population[species])
-        print(f'Primo nato è un {first_parent.species}')
-        first_repr = Event(birth_time, 'birth', individual=first_parent)
-        FES.put(first_repr)
+        FES.put(Event(birth_time, 'birth', individual=first_parent))
     
     #----------------------------------------------------------------#
     # EVENT LOOP
@@ -355,16 +348,17 @@ def simulate(init_p, data: Measure):
         # move randomly every two days
         #
         if int(time) in range(0,args.sim_time,2):
-            for ind in [ind for pop in population.values() for ind in pop ]:
-                ind.move_randomly(world)
-            world.simulate_fights(FES, time)
+            world.move_randomly()
+            world.simulate_fights(FES, time, data)
         
-        # if len(population['wolf']) % 5 == 0:
-        #data.time_size_pop.append((time,len(population)))
-        data.time_size_pop['time'].append(time)
-        data.time_size_pop['wolf'].append(len(population['wolf']))
-        data.time_size_pop['sheep'].append(len(population['sheep']))
+        # STORE THE LEN OF THE POPULATION PER SPECIES
+        data.time_size_pop.setdefault('time',[]).append(time)
+        for specie in population.keys():
+            data.time_size_pop.setdefault(specie,[]).append(len(population[specie]))
     
+    print(f'{len(population) = }')
+    print(f'Num wolf win: {sum(predator_win for predator_win, _ in data.num_win)}')
+    print(f'Num sheep win: {sum(sheep_win for _,sheep_win in data.num_win)}')
     print(f'End {time = :.2f}')
     return time
 
