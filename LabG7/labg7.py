@@ -52,11 +52,11 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
 # Population parameters
-parser.add_argument('--prob_improve', '--p_i', type=float, default=[.8], nargs='+',
+parser.add_argument('--prob_improve', '--p_i', type=float, default=[.2,.5,.8], nargs='+',
                     help='Probability of improvement of the lifetime')
-parser.add_argument('--init_population', '--p', type=int, default=[100], nargs='+',
+parser.add_argument('--init_population', '--p', type=int, default=[100,1_000], nargs='+',
                     help='Number of individuals for the 1st generation')
-parser.add_argument('--improve_factor', '--alpha', type=float, default=[.5], nargs='+',
+parser.add_argument('--improve_factor', '--alpha', type=float, default=[.2,.3,.4,.5], nargs='+',
                     help='Improve factor that an individual can develop at birth')
 # parser.add_argument('--init_lifetime', type=int, default=[356 * 3], nargs='+', # 3 years
 #                     help='Lifetime of the 1st generation')
@@ -64,7 +64,7 @@ parser.add_argument('--repr_rate', '--lambda', type=float, default=[1/365, 2/365
                     help='Rate at which an individual reproduces')
 parser.add_argument('--max_population', type=int, default=15_000,
                     help='This semplified version need a limit otherwise will infinite grow')
-parser.add_argument('--grid_dimentions', type=int, default=[4], nargs='+',
+parser.add_argument('--grid_dimentions', type=int, default=[2,3,4,5,6,7,8,9,10], nargs='+',
                     help='Side of the square of the grid dimension')
 
 # Simulation parameters
@@ -655,6 +655,8 @@ if __name__ == '__main__':
               for repr_rate_prey in args.repr_rate
               for repr_rate_predator in args.repr_rate
               for world_dim in args.grid_dimentions]
+    
+    print(f'Number of combination to simulate = {len(params)}')
     
     for param in params:
         init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, world_dim = param
