@@ -28,6 +28,10 @@
     Upload only the py code and the report (max 3 pages).
 """
 
+#
+#  I NEED TO FINT THE STABLE EQUILIBRIUM
+#
+
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # IMPORTS
 #
@@ -50,17 +54,17 @@ parser = argparse.ArgumentParser(description='Input parameters for the simulatio
 # Population parameters
 parser.add_argument('--prob_improve', '--p_i', type=float, default=[.8], nargs='+',
                     help='Probability of improvement of the lifetime')
-parser.add_argument('--init_population', '--p', type=int, default=[1_000, 5_000, 10_000], nargs='+',
+parser.add_argument('--init_population', '--p', type=int, default=[100], nargs='+',
                     help='Number of individuals for the 1st generation')
 parser.add_argument('--improve_factor', '--alpha', type=float, default=[.5], nargs='+',
                     help='Improve factor that an individual can develop at birth')
-parser.add_argument('--init_lifetime', type=int, default=[356 * 3], nargs='+', # 3 years
-                    help='Lifetime of the 1st generation')
-parser.add_argument('--repr_rate', '--lambda', type=float, default=[1.5],
+# parser.add_argument('--init_lifetime', type=int, default=[356 * 3], nargs='+', # 3 years
+#                     help='Lifetime of the 1st generation')
+parser.add_argument('--repr_rate', '--lambda', type=float, default=[1/365, 2/365, 3/365, 4/365],
                     help='Rate at which an individual reproduces')
 parser.add_argument('--max_population', type=int, default=15_000,
                     help='This semplified version need a limit otherwise will infinite grow')
-parser.add_argument('--grid_dimentions', type=int, default=[5,10,15,20,25,30,35,40,45,50], nargs='+',
+parser.add_argument('--grid_dimentions', type=int, default=[4], nargs='+',
                     help='Side of the square of the grid dimension')
 
 # Simulation parameters
@@ -74,6 +78,8 @@ parser.add_argument('--verbose', action='store_true',
                     help='To see the progress of the simulation')
 parser.add_argument('--seed', type=int, default=42, 
                     help='For reproducibility reasons')
+parser.add_argument('--not_debug', action='store_true',
+                    help='This will save the images into a directory')
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # SPECIES CLASS
@@ -83,8 +89,8 @@ SPECIES = {
     'wolf': {
         'name':'wolf',
         'init_lifetime':356 * 15, # 15 years
-        'av_improv_factor':.2,
-        'av_prob_improve':.9,
+        # 'av_improv_factor':.2,
+        # 'av_prob_improve':.9,
         'av_repr_rate': 3 / 365, # once a year on average
         'av_num_child_per_birth': 5,
         'type':'predator',
@@ -98,8 +104,8 @@ SPECIES = {
     'sheep': {
         'name':'sheep',
         'init_lifetime':356 * 10, # 10 years
-        'av_improv_factor':.2,
-        'av_prob_improve':.9,
+        # 'av_improv_factor':.2,
+        # 'av_prob_improve':.9,
         'av_repr_rate': 3 / 365, # once a year on average 
         'av_num_child_per_birth': 1,
         'type':'prey',
@@ -122,6 +128,7 @@ class Measure:
         self.num_death = 0
         self.average_pop = 0
         self.time_last_event = 0
+        self.num_fight = 0
         self.time_size_pop = {}
         self.birth_per_species = {}
         self.birth_per_gen_per_species = {}
@@ -189,7 +196,7 @@ class World(dict):
                         individual = individual
                         pass
                         
-    def simulate_mating(self, current_time, FES: PriorityQueue, data: Measure):
+    def simulate_mating(self, current_time, prob_improve, impr_factor, FES: PriorityQueue, data: Measure):
         for pos in self.values():
             if len(pos['individuals']) > 1:
                 for species in [species for species in SPECIES]:
@@ -211,6 +218,8 @@ class World(dict):
                                         gen=female.gen+1,
                                         species=female.species,
                                         world_dim=self.dim,
+                                        prob_improve=prob_improve,
+                                        impr_factor=impr_factor,
                                         mother = female)
                             female.in_heat = False
                             FES.put(Event(current_time + female.species['pregnancy_duration'], 'birth', new_born))
@@ -271,6 +280,7 @@ class World(dict):
                                     pred.last_hunt_time = current_time # saving that the predators has eaten
                         else:
                             data.num_win.append((0,1))
+                        data.num_fight += 1
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # POPULATION CLASS (DICT WITH SOME FUNCTIONS)
@@ -293,6 +303,8 @@ class Population(dict):
                 new_born = Individual(birth_time=0,
                                     father_lf=SPECIES[specie]['init_lifetime'],
                                     gen=0,
+                                    prob_improve=0, # first individual can't improve
+                                    impr_factor=None,
                                     species=SPECIES[specie],
                                     world_dim=world_dim,
                                     mother = True)
@@ -308,12 +320,12 @@ class Population(dict):
 #
 #
 class Individual():
-    def __init__(self, father_lf, gen, species: dict, mother = None, world_dim=None, birth_time = None):
+    def __init__(self, prob_improve, impr_factor, father_lf, gen, species: dict, mother = None, world_dim=None, birth_time = None):
         self.sex = 'Y' if random.random() < .5 else 'X'
         self.gen = gen
         self.birth_time = birth_time
-        self.lifetime = random.uniform(father_lf, father_lf*(1+species['av_improv_factor']))\
-            if random.random() < species['av_prob_improve'] else random.uniform(0, father_lf)
+        self.lifetime = random.uniform(father_lf, father_lf*(1+impr_factor))\
+            if random.random() < prob_improve else random.uniform(0, father_lf)
         
         self.current_position = None
         if world_dim:
@@ -329,8 +341,8 @@ class Individual():
         self.mother = mother
         
         self.repr_rate = species['av_repr_rate']
-        self.prob_improve = species['av_prob_improve']
-        self.improv_factor = species['av_improv_factor']
+        self.prob_improve = prob_improve
+        self.improv_factor = impr_factor
         # TODO: make repr_rate, prob_improve and improv_factor random for each individual
         
     def __str__(self) -> str:
@@ -428,7 +440,7 @@ def stop_in_heat(individual):
 # SIMULATION
 #
 #
-def simulate(init_p, world_dim, data: Measure):
+def simulate(init_p, prob_improve, impr_factor, world_dim, data: Measure):
     FES = PriorityQueue()
     t = 0
     
@@ -436,6 +448,7 @@ def simulate(init_p, world_dim, data: Measure):
     world = World(world_dim, population)
         
     previous_day = 0
+    printed = False
     
     #----------------------------------------------------------------#
     # EVENT LOOP
@@ -447,11 +460,25 @@ def simulate(init_p, world_dim, data: Measure):
         t = event.time
         
         if t > 0:
-            print(f'{len(population['wolf']) = } - {len(population['sheep']) = } - {t = :.2f}     ', end='\r')
+            if not printed:
+                n_sheep = 0
+                n_wolf = 0
+                for pos in world.values():
+                    for ind in pos['individuals']:
+                        if ind.species['name'] == 'wolf':
+                            n_wolf += 1
+                        else:
+                            n_sheep += 1
+                print(f'{n_wolf / world.dim**2} wolfes per cell')
+                print(f'{n_sheep / world.dim**2} sheeps per cell')
+                printed = True
+            print(f'{len(population["wolf"]) = } - {len(population["sheep"]) = } - {t = :.2f}     ', end='\r')
         else:
             print(f'Initializing the population...                                                          ', end='\r')
-        
-        if t > 0 and len(population['sheep']) < 50:
+            
+        if t > 0 and event.type == 'birth':
+            pass
+        if t > 0 and event.type == 'death':
             pass
         
         if event.type == 'birth':
@@ -482,12 +509,16 @@ def simulate(init_p, world_dim, data: Measure):
             previous_day = current_day
             world.move_randomly()
             world.simulate_mating(current_time=t,
+                                  prob_improve=prob_improve,
+                                  impr_factor=impr_factor,
                                   FES=FES,
                                   data=data)
             world.simulate_fights(current_time=t,
                                   FES=FES,
                                   data=data)
             world.kill_predator_without_food(t, FES)
+            
+        num_wolf_no_food = sum(1 for wolf in population['wolf'] if t - wolf.last_hunt_time == 0)
         
         # STORE THE LEN OF THE POPULATION PER SPECIES
         if t > 0:
@@ -499,7 +530,7 @@ def simulate(init_p, world_dim, data: Measure):
             break
     
     print(f'{len(population) = }')
-    print(f'{len(population['wolf']) = }\n{len(population['sheep']) = }')
+    print(f'{len(population["wolf"]) = }\n{len(population["sheep"]) = }')
     for species in population:
         if species in data.birth_per_gen_per_species:
             print(f'{species} birth events: {data.birth_per_species[species]}')
@@ -512,21 +543,22 @@ def simulate(init_p, world_dim, data: Measure):
 # PLOT RESULTS
 #
 #
-def plot_results(data: Measure, init_p, grid_dim, folder_path = None):
+def plot_results(data: Measure, param, folder_path = None):
+    init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, world_dim = param
             
     time_size_pop = data.time_size_pop
 
     if time_size_pop is not None:
         plt.figure(figsize=(12,8))
-        plt.plot([t/365 for t in time_size_pop['time']],time_size_pop['wolf'],label='Wolf')
-        plt.plot([t/365 for t in time_size_pop['time']],time_size_pop['sheep'],label='Sheep')
+        plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["wolf"],label='Wolf')
+        plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["sheep"],label='Sheep')
         plt.xlabel('Time (years)')
         plt.ylabel('Size of population')
-        plt.title(f'Population size over time (with {init_p = }, {grid_dim = })')
+        plt.title(f'Population size over time (with {init_p = }, {prob_improve = }, \n{impr_factor = }, {repr_rate_prey = }, {repr_rate_predator = }, {world_dim = })')
         plt.grid()
         plt.legend()
         if folder_path:
-            file_name = os.path.join(folder_path, f'{init_p}_{grid_dim}_pop_time_species.')
+            file_name = os.path.join(folder_path, f'{init_p = }_{prob_improve = }_{impr_factor = }_{repr_rate_prey = }_{repr_rate_predator = }_{world_dim = }_pop_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
@@ -542,11 +574,11 @@ def plot_results(data: Measure, init_p, grid_dim, folder_path = None):
                     alpha=.5)
         plt.xlabel('Number of generation')
         plt.ylabel('Number of birth')
-        plt.title(f'Number of birth events per generation (with {init_p = }, {grid_dim = })')
+        plt.title(f'Number of birth events per generation (with {init_p = }, {prob_improve = }, \n{impr_factor = }, {repr_rate_prey = }, {repr_rate_predator = }, {world_dim = })')
         plt.legend()
         plt.grid(True)
         if folder_path:
-            file_name = os.path.join(folder_path, f'{init_p}_{grid_dim}_birth_gen_time_species.')
+            file_name = os.path.join(folder_path, f'{init_p = }_{prob_improve = }_{impr_factor = }_{repr_rate_prey = }_{repr_rate_predator = }_{world_dim = }_birth_gen_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
@@ -562,11 +594,11 @@ def plot_results(data: Measure, init_p, grid_dim, folder_path = None):
                 print(f'Found ZeroDivisionError in {species} species')
         plt.xlabel('Number of generation')
         plt.ylabel('Average life expectancy without considering the death for fight outcomes (years)')
-        plt.title(f'Life expectancy per generation (with {init_p = }, {grid_dim = })')
+        plt.title(f'Life expectancy per generation (with {init_p = }, {prob_improve = }, \n{impr_factor = }, {repr_rate_prey = }, {repr_rate_predator = }, {world_dim = })')
         plt.legend()
         plt.grid(True)
         if folder_path:
-            file_name = os.path.join(folder_path, f'{init_p}_{grid_dim}_life_expectancy_gen_time_species.')
+            file_name = os.path.join(folder_path, f'{init_p = }_{prob_improve = }_{impr_factor = }_{repr_rate_prey = }_{repr_rate_predator = }_{world_dim = }_life_expectancy_gen_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
@@ -596,8 +628,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
     print(f'Input parameters: {vars(args)}')
     
-    # folder_path = None
-    folder_path = create_folder_path()
+    if args.not_debug:
+        folder_path = create_folder_path()
+    else:
+        folder_path = None
     
     random.seed(args.seed)
     
@@ -615,13 +649,30 @@ if __name__ == '__main__':
     
     start_time = datetime.now()
     
-    for init_p,world_dim in [(p,dim) for p in args.init_population for dim in args.grid_dimentions]:
+    params = [(init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, world_dim) for init_p in args.init_population
+              for prob_improve in args.prob_improve
+              for impr_factor in args.improve_factor
+              for repr_rate_prey in args.repr_rate
+              for repr_rate_predator in args.repr_rate
+              for world_dim in args.grid_dimentions]
+    
+    for param in params:
+        init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, world_dim = param
+        
+        SPECIES['wolf']['av_repr_rate'] = repr_rate_predator
+        SPECIES['sheep']['av_repr_rate'] = repr_rate_predator
         
         print(f'Simulating with {init_p = } and {world_dim = }')
+        print(f'{init_p // world_dim**2} ind for cell')
         
         data = Measure()
+        print(f'Simualte with {init_p = }, {prob_improve = }, {impr_factor = }, {repr_rate_prey = }, {repr_rate_predator = }, {world_dim = }')
         # print(f'Simulate with init_p={init_p} - init_lifetime={init_lifetime} - alpha={alpha} - lambda={lam} - p_i={p_i}')
-        end_time = simulate(init_p=init_p, world_dim=world_dim, data=data)
+        end_time = simulate(init_p=init_p, 
+                            prob_improve=prob_improve, 
+                            impr_factor=impr_factor, 
+                            world_dim=world_dim, 
+                            data=data)
         
         # result = {
         #     'init_p': init_p,
@@ -636,7 +687,7 @@ if __name__ == '__main__':
         #     'end_time': end_time
         # }
         # results.append(pd.DataFrame([result]))
-        plot_results(data, folder_path=folder_path, init_p=init_p, grid_dim=world_dim)
+        plot_results(data, folder_path=folder_path, param=param)
         
         print('\n-----------------------------------\n')
     
