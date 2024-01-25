@@ -202,7 +202,7 @@ class World(dict):
                             new_born = Individual(father_lf=av_lifetime,
                                         gen=female.gen+1,
                                         species=female.species,
-                                        world_dim=args.grid_dimentions,
+                                        world_dim=self.dim,
                                         mother = female)
                             female.in_heat = False
                             FES.put(Event(current_time + female.species['pregnancy_duration'], 'birth', new_born))
@@ -268,14 +268,14 @@ class World(dict):
 #
 #      
 class Population(dict):
-    def __init__(self, init_p, FES):
-        super().__init__(self.gen_init_situation(init_p, FES))
+    def __init__(self, init_p, world_dim, FES):
+        super().__init__(self.gen_init_situation(init_p, world_dim, FES))
         
     #---------------------------------------------------------------------#
     # GENERATION OF INITIAL POPULATION
     #
     #
-    def gen_init_situation(self,init_p, FES: PriorityQueue):
+    def gen_init_situation(self, init_p, world_dim, FES: PriorityQueue):
         
         init_ps = [int(init_p * .4), int(init_p * .6)] # 20% wolf - 80% sheep
         
@@ -285,7 +285,7 @@ class Population(dict):
                                     father_lf=SPECIES[specie]['init_lifetime'],
                                     gen=0,
                                     species=SPECIES[specie],
-                                    world_dim=args.grid_dimentions,
+                                    world_dim=world_dim,
                                     mother = True)
                 FES.put(Event(0, 'birth', new_born))
         
@@ -421,7 +421,7 @@ def simulate(init_p, world_dim, data: Measure):
     FES = PriorityQueue()
     t = 0
     
-    population = Population(init_p=init_p, FES=FES)
+    population = Population(init_p=init_p, world_dim=world_dim, FES=FES)
     world = World(world_dim, population)
         
     previous_day = 0
@@ -600,10 +600,11 @@ if __name__ == '__main__':
     
     for init_p,world_dim in [(p,dim) for p in args.init_population for dim in args.grid_dimentions]:
         
+        print(f'Simulating with {init_p = } and {world_dim = }')
+        
         data = Measure()
         # print(f'Simulate with init_p={init_p} - init_lifetime={init_lifetime} - alpha={alpha} - lambda={lam} - p_i={p_i}')
-        end_time = simulate(init_p=args.init_population[0],
-                data=data)
+        end_time = simulate(init_p=init_p, world_dim=world_dim, data=data)
         
         # result = {
         #     'init_p': init_p,
@@ -619,6 +620,8 @@ if __name__ == '__main__':
         # }
         # results.append(pd.DataFrame([result]))
         plot_results(data, folder_path=folder_path, init_p=init_p, grid_dim=world_dim)
+        
+        print('\n-----------------------------------\n')
     
     # if len(data.birth_per_gen) > 7:
     #     plot_gen_birth(data.time_size_pop,data.birth_per_gen, folder_path, init_p, init_lifetime, alpha, lam, p_i)
