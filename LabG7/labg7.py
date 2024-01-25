@@ -554,11 +554,11 @@ def plot_results(data: Measure, param, folder_path = None):
         plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["sheep"],label='Sheep')
         plt.xlabel('Time (years)')
         plt.ylabel('Size of population')
-        plt.title(f'Population size over time (with {init_p = }, {prob_improve = }, \n{impr_factor = }, {repr_rate_prey = }, {repr_rate_predator = }, {world_dim = })')
+        plt.title(f'Population size over time (with {init_p = }, {prob_improve = :.2f}, \n{impr_factor = :.2f}, {repr_rate_prey = :.2f}, {repr_rate_predator = :.2f}, {world_dim = })')
         plt.grid()
         plt.legend()
         if folder_path:
-            file_name = os.path.join(folder_path, f'{init_p = }_{prob_improve = }_{impr_factor = }_{repr_rate_prey = }_{repr_rate_predator = }_{world_dim = }_pop_time_species.')
+            file_name = os.path.join(folder_path, f'{init_p}_{prob_improve:.2f}_{impr_factor:.2f}_{repr_rate_prey:.2f}_{repr_rate_predator:.2f}_{world_dim}_pop_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
@@ -574,11 +574,11 @@ def plot_results(data: Measure, param, folder_path = None):
                     alpha=.5)
         plt.xlabel('Number of generation')
         plt.ylabel('Number of birth')
-        plt.title(f'Number of birth events per generation (with {init_p = }, {prob_improve = }, \n{impr_factor = }, {repr_rate_prey = }, {repr_rate_predator = }, {world_dim = })')
+        plt.title(f'Number of birth events per generation (with {init_p = }, {prob_improve = :.2f}, \n{impr_factor = :.2f}, {repr_rate_prey = :.2f}, {repr_rate_predator = :.2f}, {world_dim = })')
         plt.legend()
         plt.grid(True)
         if folder_path:
-            file_name = os.path.join(folder_path, f'{init_p = }_{prob_improve = }_{impr_factor = }_{repr_rate_prey = }_{repr_rate_predator = }_{world_dim = }_birth_gen_time_species.')
+            file_name = os.path.join(folder_path, f'{init_p}_{prob_improve:.2f}_{impr_factor:.2f}_{repr_rate_prey:.2f}_{repr_rate_predator:.2f}_{world_dim}_birth_gen_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
@@ -594,11 +594,11 @@ def plot_results(data: Measure, param, folder_path = None):
                 print(f'Found ZeroDivisionError in {species} species')
         plt.xlabel('Number of generation')
         plt.ylabel('Average life expectancy without considering the death for fight outcomes (years)')
-        plt.title(f'Life expectancy per generation (with {init_p = }, {prob_improve = }, \n{impr_factor = }, {repr_rate_prey = }, {repr_rate_predator = }, {world_dim = })')
+        plt.title(f'Life expectancy per generation (with {init_p = }, {prob_improve = :.2f}, \n{impr_factor = :.2f}, {repr_rate_prey = :.2f}, {repr_rate_predator = :.2f}, {world_dim = })')
         plt.legend()
         plt.grid(True)
         if folder_path:
-            file_name = os.path.join(folder_path, f'{init_p = }_{prob_improve = }_{impr_factor = }_{repr_rate_prey = }_{repr_rate_predator = }_{world_dim = }_life_expectancy_gen_time_species.')
+            file_name = os.path.join(folder_path, f'{init_p}_{prob_improve:.2f}_{impr_factor:.2f}_{repr_rate_prey:.2f}_{repr_rate_predator:.2f}_{world_dim}_life_expectancy_gen_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
