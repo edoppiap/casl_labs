@@ -29,7 +29,7 @@
 """
 
 #
-#  I NEED TO FINT THE STABLE EQUILIBRIUM
+#  I NEED TO FIND THE STABLE EQUILIBRIUM
 #
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
@@ -44,6 +44,7 @@ import os
 import argparse
 from datetime import datetime
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # INPUT PARAMETERS
@@ -54,17 +55,17 @@ parser = argparse.ArgumentParser(description='Input parameters for the simulatio
 # Population parameters
 parser.add_argument('--prob_improve', '--p_i', type=float, default=[.2,.5,.8], nargs='+',
                     help='Probability of improvement of the lifetime')
-parser.add_argument('--init_population', '--p', type=int, default=[100,1_000], nargs='+',
+parser.add_argument('--init_population', '--p', type=int, default=[100], nargs='+',
                     help='Number of individuals for the 1st generation')
 parser.add_argument('--improve_factor', '--alpha', type=float, default=[.2,.3,.4,.5], nargs='+',
                     help='Improve factor that an individual can develop at birth')
 # parser.add_argument('--init_lifetime', type=int, default=[356 * 3], nargs='+', # 3 years
 #                     help='Lifetime of the 1st generation')
-parser.add_argument('--repr_rate', '--lambda', type=float, default=[1/365, 2/365, 3/365, 4/365],
+parser.add_argument('--repr_rate', '--lambda', type=float, default=[1/365, 2/365, 3/365, 4/365, 5/365],
                     help='Rate at which an individual reproduces')
 parser.add_argument('--max_population', type=int, default=15_000,
                     help='This semplified version need a limit otherwise will infinite grow')
-parser.add_argument('--grid_dimentions', type=int, default=[2,3,4,5,6,7,8,9,10], nargs='+',
+parser.add_argument('--grid_dimentions', type=int, default=[2,3,4,5,6,7,8,9,10,11,12,13,14,15], nargs='+',
                     help='Side of the square of the grid dimension')
 
 # Simulation parameters
@@ -107,7 +108,7 @@ SPECIES = {
         # 'av_improv_factor':.2,
         # 'av_prob_improve':.9,
         'av_repr_rate': 3 / 365, # once a year on average 
-        'av_num_child_per_birth': 1,
+        'av_num_child_per_birth': 2,
         'type':'prey',
         # 'puberty_time': 60, # 2 months
         'max_day_with_no_food': None,
@@ -209,7 +210,7 @@ class World(dict):
                     for female in females_in_heat:
                         if len(males) == 0: break
                         
-                        male = random.choice(males)
+                        male = random.choice(males) # TODO: this could be another reason to fight
                         av_lifetime = (female.lifetime + male.lifetime) / 2
                         female.pregnant = True
                         males.remove(male)
@@ -459,22 +460,23 @@ def simulate(init_p, prob_improve, impr_factor, world_dim, data: Measure):
         
         t = event.time
         
-        if t > 0:
-            if not printed:
-                n_sheep = 0
-                n_wolf = 0
-                for pos in world.values():
-                    for ind in pos['individuals']:
-                        if ind.species['name'] == 'wolf':
-                            n_wolf += 1
-                        else:
-                            n_sheep += 1
-                print(f'{n_wolf / world.dim**2} wolfes per cell')
-                print(f'{n_sheep / world.dim**2} sheeps per cell')
-                printed = True
-            print(f'{len(population["wolf"]) = } - {len(population["sheep"]) = } - {t = :.2f}     ', end='\r')
-        else:
-            print(f'Initializing the population...                                                          ', end='\r')
+        if args.verbose:
+            if t > 0:
+                if not printed:
+                    n_sheep = 0
+                    n_wolf = 0
+                    for pos in world.values():
+                        for ind in pos['individuals']:
+                            if ind.species['name'] == 'wolf':
+                                n_wolf += 1
+                            else:
+                                n_sheep += 1
+                    print(f'{n_wolf / world.dim**2} wolfes per cell')
+                    print(f'{n_sheep / world.dim**2} sheeps per cell')
+                    printed = True
+                print(f'{len(population["wolf"]) = } - {len(population["sheep"]) = } - {t = :.2f}     ', end='\r')
+            else:
+                print(f'Initializing the population...                                                          ', end='\r')
             
         if t > 0 and event.type == 'birth':
             pass
@@ -529,14 +531,15 @@ def simulate(init_p, prob_improve, impr_factor, world_dim, data: Measure):
         if len(population) == 0 or len(population) > args.max_population or t > args.sim_time:
             break
     
-    print(f'{len(population) = }')
-    print(f'{len(population["wolf"]) = }\n{len(population["sheep"]) = }')
-    for species in population:
-        if species in data.birth_per_gen_per_species:
-            print(f'{species} birth events: {data.birth_per_species[species]}')
-    print(f'Num wolf win: {sum(predator_win for predator_win, _ in data.num_win)}')
-    print(f'Num sheep win: {sum(sheep_win for _,sheep_win in data.num_win)}')
-    print(f'End {t = :.2f}')
+    if args.verbose:
+        print(f'{len(population) = }')
+        print(f'{len(population["wolf"]) = }\n{len(population["sheep"]) = }')
+        for species in population:
+            if species in data.birth_per_gen_per_species:
+                print(f'{species} birth events: {data.birth_per_species[species]}')
+        print(f'Num wolf win: {sum(predator_win for predator_win, _ in data.num_win)}')
+        print(f'Num sheep win: {sum(sheep_win for _,sheep_win in data.num_win)}')
+        print(f'End {t = :.2f}')
     return t
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
@@ -656,19 +659,24 @@ if __name__ == '__main__':
               for repr_rate_predator in args.repr_rate
               for world_dim in args.grid_dimentions]
     
-    print(f'Number of combination to simulate = {len(params)}')
+    if args.verbose:
+        print(f'Number of combination to simulate = {len(params)}')
+        loop = params
+    else:
+        loop = tqdm(params, desc='Simulating all combination of parameters')
     
-    for param in params:
+    for param in loop:
         init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, world_dim = param
         
         SPECIES['wolf']['av_repr_rate'] = repr_rate_predator
-        SPECIES['sheep']['av_repr_rate'] = repr_rate_predator
+        SPECIES['sheep']['av_repr_rate'] = repr_rate_prey
         
-        print(f'Simulating with {init_p = } and {world_dim = }')
-        print(f'{init_p // world_dim**2} ind for cell')
+        if args.verbose:
+            print(f'Simulating with {init_p = } and {world_dim = }')
+            print(f'{init_p // world_dim**2} ind for cell')
+            print(f'Simualte with {init_p = }, {prob_improve = }, {impr_factor = }, {repr_rate_prey = }, {repr_rate_predator = }, {world_dim = }')
         
         data = Measure()
-        print(f'Simualte with {init_p = }, {prob_improve = }, {impr_factor = }, {repr_rate_prey = }, {repr_rate_predator = }, {world_dim = }')
         # print(f'Simulate with init_p={init_p} - init_lifetime={init_lifetime} - alpha={alpha} - lambda={lam} - p_i={p_i}')
         end_time = simulate(init_p=init_p, 
                             prob_improve=prob_improve, 
@@ -691,7 +699,7 @@ if __name__ == '__main__':
         # results.append(pd.DataFrame([result]))
         plot_results(data, folder_path=folder_path, param=param)
         
-        print('\n-----------------------------------\n')
+        if args.verbose: print('\n-----------------------------------\n')
     
     # if len(data.birth_per_gen) > 7:
     #     plot_gen_birth(data.time_size_pop,data.birth_per_gen, folder_path, init_p, init_lifetime, alpha, lam, p_i)
