@@ -55,20 +55,34 @@ import copy
 parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
 # Population parameters
-parser.add_argument('--prob_improve', '--p_i', type=float, default=[.2,.5,.8], nargs='+',
+parser.add_argument('--prob_improve', '--p_i', type=float, default=[.5], nargs='+',
                     help='Probability of improvement of the lifetime')
-parser.add_argument('--init_population', '--p', type=int, default=[100], nargs='+',
+parser.add_argument('--init_population', '--p', type=int, default=[1_000], nargs='+',
                     help='Number of individuals for the 1st generation')
-parser.add_argument('--improve_factor', '--alpha', type=float, default=[.2,.3,.4,.5], nargs='+',
+parser.add_argument('--improve_factor', '--alpha', type=float, default=[.3], nargs='+',
                     help='Improve factor that an individual can develop at birth')
 # parser.add_argument('--init_lifetime', type=int, default=[356 * 3], nargs='+', # 3 years
 #                     help='Lifetime of the 1st generation')
-parser.add_argument('--repr_rate', '--lambda', type=float, default=[12/365, 10/365],
+parser.add_argument('--repr_rate', '--lambda', type=float, default=[12/365],
                     help='Rate at which an individual reproduces')
-parser.add_argument('--max_population', type=int, default=15_000,
+parser.add_argument('--max_population', type=int, default=50_000,
                     help='This semplified version need a limit otherwise will infinite grow')
-parser.add_argument('--grid_dimentions', type=int, default=[2,3,4,5,6,7,8,9,10,11,12,13,14,15], nargs='+',
+parser.add_argument('--grid_dimentions', type=int, default=[10,20,50,100], nargs='+',
                     help='Side of the square of the grid dimension')
+parser.add_argument('--av_num_child', type=int, default=[3,5], nargs='+',
+                    help='Number of new_born each individual have each birth')
+parser.add_argument('--in_head_period', type=int, default=[7,14], nargs='+',
+                    help='How many days the in-heat period last')
+parser.add_argument('--days_between_hunts', type=int, default=[0,7], nargs='+',
+                    help='How many days a predator will not engage fight because has already eaten')
+parser.add_argument('--puberty_time', default=[0,30], nargs='+',
+                    help='Number of days before an individual is able to reproduce')
+parser.add_argument('--days_rate_to_move', default=[1], nargs='+',
+                    help='At which rate of days move, repr and fight each individuals')
+parser.add_argument('--percentages', default=[.2,.5,.8], nargs='+',
+                    help='Percentage of the whole individual that each species will be')
+parser.add_argument('--initial_transient', default=365, type=int,
+                    help='Initial period in which the individuals do not fight but only reproduce')
 
 # Simulation parameters
 parser.add_argument('--sim_time', type=int, default=356 * 35, # 35 years
@@ -83,6 +97,8 @@ parser.add_argument('--seed', type=int, default=42,
                     help='For reproducibility reasons')
 parser.add_argument('--not_debug', action='store_true',
                     help='This will save the images into a directory')
+parser.add_argument('--multiprocessing', action='store_true',
+                    help='This will run the simulation in parallel processes')
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # SPECIES CLASS
@@ -97,9 +113,9 @@ SPECIES = {
         'av_repr_rate': 3 / 365, # once a year on average
         'av_num_child_per_birth': 5,
         'type':'predator',
-        # 'puberty_time': 60, # 2 months
+        'puberty_time': 60, # 2 months
         'max_day_with_no_food': 30, # 1 months
-        'in_heat_period': 2 * 30, # 2 months
+        'in_heat_period': 14, # 2 weeks
         'pregnancy_duration': 2 * 30, # 2 months
         'days_between_hunts': 7,
         'attack_on_group': True
@@ -112,9 +128,9 @@ SPECIES = {
         'av_repr_rate': 3 / 365, # once a year on average 
         'av_num_child_per_birth': 2,
         'type':'prey',
-        # 'puberty_time': 60, # 2 months
+        'puberty_time': 60, # 2 months
         'max_day_with_no_food': None,
-        'in_heat_period': 30, # 2 months
+        'in_heat_period': 14, # 2 weeks
         'pregnancy_duration': 5 * 30, # 5 months
         'days_between_hunts': None,
         'attack_on_group': None
@@ -191,13 +207,9 @@ class World(dict):
         for pos in self.values():
             if len(pos['individuals']) > 1 and 'predator' in [ind.species['type'] for ind in pos['individuals']]:
                 for individual in [ind for ind in pos['individuals'] if ind.species['type'] == 'predator']:
-                    try:
-                        if current_time - individual.last_hunt_time > individual.species['max_day_with_no_food']:
+                    if current_time - individual.last_hunt_time > individual.species['max_day_with_no_food']:
                             death_event = Event(current_time, 'death', individual)
                             FES.put(death_event)
-                    except TypeError:
-                        individual = individual
-                        pass
                         
     def simulate_mating(self, current_time, prob_improve, impr_factor, species, FES: PriorityQueue, data: Measure):
         for pos in self.values():
@@ -234,7 +246,7 @@ class World(dict):
             #
             # for each position check if there are more than one individuals
             if len(pos['individuals']) > 1:
-                predators = [ind for ind in pos['individuals'] if ind.species['type'] == 'predator']
+                predators = [ind for ind in pos['individuals'] if ind.species['type'] == 'predator' and current_time - ind.last_hunt_time >= ind.species['days_between_hunts']]
                 preys = [ind for ind in pos['individuals'] if ind.species['type'] == 'prey']
                 if len(predators) == 0 or len(preys) == 0:
                     break # there is no change to have a fight TODO: models if two individuals of the same species can fight eachother
@@ -290,16 +302,16 @@ class World(dict):
 #
 #      
 class Population(dict):
-    def __init__(self, init_p, world_dim, species, FES):
-        super().__init__(self.gen_init_situation(init_p, world_dim, species, FES))
+    def __init__(self, init_p, world_dim, species, percentages, FES):
+        super().__init__(self.gen_init_situation(init_p, world_dim, species, percentages, FES))
         
     #---------------------------------------------------------------------#
     # GENERATION OF INITIAL POPULATION
     #
     #
-    def gen_init_situation(self, init_p, world_dim, species, FES: PriorityQueue):
+    def gen_init_situation(self, init_p, world_dim, species, percentages, FES: PriorityQueue):
         
-        init_ps = [int(init_p * .5), int(init_p * .5)] # 20% wolf - 80% sheep
+        init_ps = [int(init_p * percent) for percent in percentages] # 20% wolf - 80% sheep
         
         for specie,n_p in zip(species, init_ps):
             for _ in range(n_p):
@@ -443,11 +455,11 @@ def stop_in_heat(individual):
 # SIMULATION
 #
 #
-def simulate(init_p, prob_improve, impr_factor, world_dim, species, data: Measure, args):
+def simulate(init_p, prob_improve, impr_factor, percent, world_dim, species, data: Measure, args):
     FES = PriorityQueue()
     t = 0
     
-    population = Population(init_p=init_p, world_dim=world_dim, species=species, FES=FES)
+    population = Population(init_p=init_p, world_dim=world_dim, species=species, percentages=percent, FES=FES)
     world = World(world_dim, population)
         
     previous_day = 0
@@ -479,11 +491,6 @@ def simulate(init_p, prob_improve, impr_factor, world_dim, species, data: Measur
                 print(f'{len(population["wolf"]) = } - {len(population["sheep"]) = } - {t = :.2f}     ', end='\r')
             else:
                 print(f'Initializing the population...                                                          ', end='\r')
-            
-        if t > 0 and event.type == 'birth':
-            pass
-        if t > 0 and event.type == 'death':
-            pass
         
         if event.type == 'birth':
             birth(current_time=t,
@@ -518,12 +525,12 @@ def simulate(init_p, prob_improve, impr_factor, world_dim, species, data: Measur
                                   species=species,
                                   FES=FES,
                                   data=data)
-            world.simulate_fights(current_time=t,
-                                  FES=FES,
-                                  data=data)
-            world.kill_predator_without_food(t, FES)
-            
-        num_wolf_no_food = sum(1 for wolf in population['wolf'] if t - wolf.last_hunt_time == 0)
+            if t > args.initial_transient:                
+                world.simulate_fights(current_time=t,
+                                    FES=FES,
+                                    data=data)
+            if t > (args.initial_transient + 30):
+                world.kill_predator_without_food(t, FES)
         
         # STORE THE LEN OF THE POPULATION PER SPECIES
         if t > 0:
@@ -531,7 +538,7 @@ def simulate(init_p, prob_improve, impr_factor, world_dim, species, data: Measur
             for specie in population.keys():
                 data.time_size_pop.setdefault(specie,[]).append(len(population[specie]))
         
-        if len(population) == 0 or len(population) > args.max_population or t > args.sim_time:
+        if len(population) == 0 or len(population['wolf']) == 0 or len(population) > args.max_population or t > args.sim_time:
             break
     
     if args.verbose:
@@ -549,22 +556,37 @@ def simulate(init_p, prob_improve, impr_factor, world_dim, species, data: Measur
 # PLOT RESULTS
 #
 #
-def plot_results(data: Measure, param, folder_path = None):
-    init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, world_dim, _, _ = param
+def plot_results(data: Measure, param, folder_path = None, end_time = None):
+    init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
+               days_between_hunts, puberty_time_predator, puberty_time_prey, percent, world_dim, args, _ = param
             
     time_size_pop = data.time_size_pop
+    
+    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M-%S-%f")
+    output_str = f'Input parameters: \n{init_p = },\n{prob_improve = },\n{impr_factor = },\n{repr_rate_prey = },\n{repr_rate_predator = },\n' \
+        + f'{num_child_predator = },\n{num_child_prey = }\n{heat_period_predator = },\n{heat_period_prey = },\n{days_between_hunts = },\n' \
+        + f'{puberty_time_predator = },\n{percent = },\n{puberty_time_prey = },\n{world_dim = }.\n\n'
+    output_str += f'Wolf kills sheep with a rate of {sum(i for i,_ in data.num_win) / (end_time - 365)} hunts/day'
+    
+    if folder_path:
+        file_name = os.path.join(folder_path, f'{current_time}_logs.txt')
+        with open(file_name, 'w') as f:
+            f.write(output_str)
+    else:
+        print(output_str)
 
     if time_size_pop is not None:
         plt.figure(figsize=(12,8))
         plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["wolf"],label='Wolf')
         plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["sheep"],label='Sheep')
+        plt.axvline(x=args.initial_transient/365, color='g', linestyle='--', label='End initial period of peace')
         plt.xlabel('Time (years)')
         plt.ylabel('Size of population')
-        plt.title(f'Population size over time (with {init_p = }, {prob_improve = :.2f}, \n{impr_factor = :.2f}, {repr_rate_prey = :.4f}, {repr_rate_predator = :.4f}, {world_dim = })')
+        plt.title(f'Population size over time')
         plt.grid()
         plt.legend()
         if folder_path:
-            file_name = os.path.join(folder_path, f'{init_p}_{prob_improve:.2f}_{impr_factor:.2f}_{repr_rate_prey:.4f}_{repr_rate_predator:.4f}_{world_dim}_pop_time_species.')
+            file_name = os.path.join(folder_path, f'{current_time}_pop_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
@@ -580,11 +602,11 @@ def plot_results(data: Measure, param, folder_path = None):
                     alpha=.5)
         plt.xlabel('Number of generation')
         plt.ylabel('Number of birth')
-        plt.title(f'Number of birth events per generation (with {init_p = }, {prob_improve = :.2f}, \n{impr_factor = :.2f}, {repr_rate_prey = :.4f}, {repr_rate_predator = :.4f}, {world_dim = })')
+        plt.title(f'Number of birth events per generation')
         plt.legend()
         plt.grid(True)
         if folder_path:
-            file_name = os.path.join(folder_path, f'{init_p}_{prob_improve:.2f}_{impr_factor:.2f}_{repr_rate_prey:.4f}_{repr_rate_predator:.4f}_{world_dim}_birth_gen_time_species.')
+            file_name = os.path.join(folder_path, f'{current_time}_birth_gen_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
@@ -600,11 +622,11 @@ def plot_results(data: Measure, param, folder_path = None):
                 print(f'Found ZeroDivisionError in {species} species')
         plt.xlabel('Number of generation')
         plt.ylabel('Average life expectancy without considering the death for fight outcomes (years)')
-        plt.title(f'Life expectancy per generation (with {init_p = }, {prob_improve = :.2f}, \n{impr_factor = :.2f}, {repr_rate_prey = :.4f}, {repr_rate_predator = :.4f}, {world_dim = })')
+        plt.title(f'Life expectancy per generation')
         plt.legend()
         plt.grid(True)
         if folder_path:
-            file_name = os.path.join(folder_path, f'{init_p}_{prob_improve:.2f}_{impr_factor:.2f}_{repr_rate_prey:.4f}_{repr_rate_predator:.4f}_{world_dim}_life_expectancy_gen_time_species.')
+            file_name = os.path.join(folder_path, f'{current_time}_life_expectancy_gen_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
@@ -627,12 +649,23 @@ def create_folder_path():
     return folder_path
 
 def simulate_wrapper(param):
-    init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, world_dim, args, folder_path = param
+    init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
+               days_between_hunts, puberty_time_predator, puberty_time_prey, percent, world_dim, args, folder_path = param
     print(f'Simualte with {init_p = }, {prob_improve = }, {impr_factor = }, {repr_rate_prey = :.4f}, {repr_rate_predator = :.4f}, {world_dim = }')
     
     species = copy.deepcopy(SPECIES)
+    
     species['wolf']['av_repr_rate'] = repr_rate_predator
+    species['wolf']['av_num_child_per_birth'] = num_child_predator
+    species['wolf']['in_heat_period'] = heat_period_predator
+    species['wolf']['days_between_hunts'] = days_between_hunts
+    species['wolf']['puberty_time_predator'] = puberty_time_predator
+    
     species['sheep']['av_repr_rate'] = repr_rate_prey
+    species['sheep']['av_num_child_per_birth'] = num_child_prey
+    species['sheep']['in_heat_period'] = heat_period_prey
+    species['sheep']['days_between_hunts'] = days_between_hunts
+    species['sheep']['puberty_time'] = puberty_time_prey
     
     data = Measure()
     end_time = simulate(init_p=init_p, 
@@ -641,8 +674,11 @@ def simulate_wrapper(param):
                             world_dim=world_dim, 
                             data=data,
                             species=species,
+                            percent=percent,
                             args=args)
-    plot_results(data, folder_path=folder_path, param=param)
+    
+    # if len(data.birth_per_gen_per_species['wolf']) > 4:
+    plot_results(data, folder_path=folder_path, param=param, end_time=end_time)
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # MAIN METHOD
@@ -673,22 +709,34 @@ if __name__ == '__main__':
     
     start_time = datetime.now()
     
-    params = [(init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, world_dim, args, folder_path) for init_p in args.init_population
+    params = [(init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey,
+               days_between_hunts, puberty_time_predator, puberty_time_prey, (percent,1-percent), world_dim, args, folder_path) for init_p in args.init_population
               for prob_improve in args.prob_improve
               for impr_factor in args.improve_factor
               for repr_rate_prey in args.repr_rate
               for repr_rate_predator in args.repr_rate
+              for num_child_predator in args.av_num_child
+              for heat_period_predator in args.in_head_period
+              for num_child_prey in args.av_num_child
+              for heat_period_prey in args.in_head_period
+              for days_between_hunts in args.days_between_hunts
+              for puberty_time_predator in args.puberty_time
+              for puberty_time_prey in args.puberty_time
+              for percent in args.percentages
               for world_dim in args.grid_dimentions]
     
-    
-    num_processes = multiprocessing.cpu_count()
-    pool = multiprocessing.Pool(processes=num_processes)
-    print(f'Number of combination to simulate = {len(params)} with {num_processes} processes in parallel')
-    
-    simulation_results = pool.map(simulate_wrapper, params)
-    
-    pool.close()
-    pool.join()
+    if args.multiprocessing:
+        num_processes = multiprocessing.cpu_count()
+        pool = multiprocessing.Pool(processes=num_processes)
+        print(f'Number of combination to simulate = {len(params)} with {num_processes} processes in parallel')
+        
+        simulation_results = pool.map(simulate_wrapper, params)
+        
+        pool.close()
+        pool.join()
+    else:
+        for param in tqdm(params, desc='Simulating in sequence...'):
+            simulate_wrapper(param)
         
     
     # if args.verbose:
