@@ -41,12 +41,10 @@
     
     instantaneus growth rates prey = dx / dt = alpha * x - beta * x * y
     instantaneus growth rates predator = dy / dt = delta * x * y - gamma * y
+    
+    STABLE EQUILIBRIUM
 
 """
-
-#
-#  I NEED TO FIND THE STABLE EQUILIBRIUM
-#
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # IMPORTS
@@ -63,6 +61,8 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import multiprocessing
 import copy
+import numpy as np
+from scipy.stats import t
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # INPUT PARAMETERS
@@ -170,10 +170,12 @@ class Measure:
         self.average_pop = 0
         self.time_last_event = 0
         self.num_fight = 0
+        self.end_time = 0
         self.time_size_pop = {}
         self.birth_per_species = {}
         self.death_per_species = {}
         self.birth_per_gen_per_species = {}
+        self.is_species_exctinct = {}
         self.num_win = []
         self.wolf_death_time = None
         self.repr_rate = {}
@@ -575,10 +577,20 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
             data.time_size_pop.setdefault('time',[]).append(t)
             for specie in population.keys():
                 data.time_size_pop.setdefault(specie,[]).append(len(population[specie]))
+                
+        for name in population:
+            if len(population[name]) == 0:
+                data.is_species_exctinct[name] = t
         
         if len(population) == 0 or len(population) > args.max_population or t > args.sim_time:
             break
         
+        
+        # if len(population['wolf']) == 0 and data.wolf_death_time is None:
+        #     data.wolf_death_time = t
+        #     break
+    
+    
         # if len(population['wolf']) == 0 and data.wolf_death_time is None:
         #     data.wolf_death_time = t
         #     break
@@ -586,13 +598,14 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
     if args.verbose:
         print(f'{len(population) = }')
         print(f'{len(population["wolf"]) = }\n{len(population["sheep"]) = }')
-        for species in population:
-            if species in data.birth_per_gen_per_species:
-                print(f'{species} birth events: {data.birth_per_species[species]}')
+        for name in population:
+            if name in data.birth_per_gen_per_species:
+                print(f'{name} birth events: {data.birth_per_species[name]}')
         print(f'Num wolf win: {sum(predator_win for predator_win, _ in data.num_win)}')
         print(f'Num sheep win: {sum(sheep_win for _,sheep_win in data.num_win)}')
         print(f'End {t = :.2f}')
-    return t
+        
+    data.end_time = t
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # PLOT RESULTS
@@ -619,14 +632,6 @@ def plot_results(data: Measure, param, folder_path = None, end_time = None):
         output_str += f'{species.capitalize()} total deaths events: {data.death_per_species[species]}\n'
     output_str += f'End time = {end_time}'
     
-    # if not folder_path:
-    #     plt.figure(figsize=(12,8))
-    #     plt.plot(data.repr_rate['time'], data.repr_rate['wolf'], label='Repr_rate wolf')
-    #     plt.plot(data.repr_rate['time'], data.repr_rate['sheep'], label='Repr_rate sheep')
-    #     plt.grid(True)
-    #     plt.legend()
-    #     plt.show()
-    
     if folder_path:
         file_name = os.path.join(folder_path, f'{current_time}_logs.txt')
         with open(file_name, 'w') as f:
@@ -638,7 +643,6 @@ def plot_results(data: Measure, param, folder_path = None, end_time = None):
         plt.figure(figsize=(12,8))
         plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["wolf"],label='Wolf')
         plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["sheep"],label='Sheep')
-        # plt.axvline(x=args.initial_transient/365, color='g', linestyle='--', label='End initial period of peace')
         plt.xlabel('Time (years)')
         plt.ylabel('Size of population')
         plt.title(f'Population size over time')
@@ -690,6 +694,25 @@ def plot_results(data: Measure, param, folder_path = None, end_time = None):
             plt.close()
         else:
             plt.show()
+            
+def plot_accuracy_results(acc_results, folder_path = None):
+    
+    plt.figure(figsize=(12,8))
+    plt.plot(acc_results['prob_improve_prey'], acc_results['mean_exctint_time_prey'], marker='o', label='Average exctint time')
+    # plt.errorbar(selected_df['bias prob'], selected_df['consensus time mean'], 
+    #             yerr=[selected_df['consensus time mean'] - selected_df['time interval low'],
+    #                 selected_df['time interval up'] - selected_df['consensus time mean']],
+    #             fmt='o', capsize=5, c='black', zorder=1)
+    # init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, repr_rate_prey, \
+    #     repr_rate_predator, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
+    #     days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, _, _ = param
+    plt.xlabel('Probability of improvement')
+    plt.ylabel('Mean time of exctintion')
+    plt.title('Mean time of extinction vs probability of improvement (prey)')
+    plt.grid(True)
+    plt.legend()
+    plt.show()
+    
     
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # CREATE OUTPUT FOLDER
@@ -733,16 +756,70 @@ def simulate_wrapper(param):
     species['sheep']['puberty_time'] = puberty_time_prey
     
     data = Measure()
-    end_time = simulate(init_p=init_p, 
-                            world_dim=world_dim, 
-                            data=data,
-                            species=species,
-                            percent=percent,
-                            move_rate=move_rate,
-                            args=args)
+    simulate(init_p=init_p, 
+        world_dim=world_dim, 
+        data=data,
+        species=species,
+        percent=percent,
+        move_rate=move_rate,
+        args=args)
+    # plot_results(data, folder_path=folder_path, param=param, end_time=data.end_time)
+    return data
+
+# -------------------------------------------------------------------------------------------------------#
+# CONDIFENCE INTERVAL METHOD
+#
+#
+def calculate_confidence_interval(data: list, conf):
+    data = [data for data in data if data is not None]
+    mean = np.mean(data)
+    std = np.std(data, ddof=1)
+    se = std / (len(data)**(1/2)) # this is the standard error
     
-    # if len(data.birth_per_gen_per_species['wolf']) > 4:
-    plot_results(data, folder_path=folder_path, param=param, end_time=end_time)
+    interval = t.interval(confidence = conf, # confidence level
+                          df = len(data)-1, # degree of freedom
+                          loc = mean, # center of the distribution
+                          scale = se # spread of the distribution 
+                          # (we use the standard error as we use the extimate of the mean)
+                          )
+    
+    MOE = interval[1] - interval[0] # this is the margin of error
+    re = (MOE / (2 * abs(mean))) # this is the relative error
+    acc = 1 - re # this is the accuracy
+    return mean,interval,acc
+
+def intervals_wrapper(param:tuple, tot_results: list, conf, acc_threshold):
+    mean_time,interval_time,acc_time = calculate_confidence_interval([data.end_time for data in tot_results],conf)
+    mean_exctint_time_prey,interval_exctint_time_prey, acc_exctint_time_prey = calculate_confidence_interval([data.is_species_exctinct.setdefault('sheep', None) for data in tot_results],conf)
+    mean_exctint_time_predator,interval_exctint_time_predator, acc_exctint_time_predator = calculate_confidence_interval([data.is_species_exctinct.setdefault('wolf', None) for data in tot_results],conf)
+    mean_lf_prob_prey,interval_lf_prob_prey,acc_lf_prob_prey = calculate_confidence_interval([gen['tot lf'] / gen['n birth'] for data in tot_results for gen in data.birth_per_gen_per_species['sheep'].values()],conf)
+    mean_lf_prob_predator,interval_lf_prob_predator,acc_lf_prob_predator = calculate_confidence_interval([gen['tot lf'] / gen['n birth'] for data in tot_results for gen in data.birth_per_gen_per_species['wolf'].values()],conf)
+    
+    results = None
+    if acc_time > acc_threshold and acc_lf_prob_prey > acc_threshold and acc_lf_prob_predator > acc_threshold:
+        results = {
+            'prob_improve_prey':param[1],
+            'impr_factor_prey':param[2],
+            'prob_improve_predator':param[3],
+            'impr_factor_predator':param[4],
+            'mean_time' : mean_time,
+            'interval_time': interval_time,
+            'acc_time':acc_time,
+            'mean_exctint_time_prey':mean_exctint_time_prey,
+            'interval_exctint_time_prey':interval_exctint_time_prey,
+            'acc_exctint_time_prey':acc_exctint_time_prey,
+            'mean_exctint_time_predator':mean_exctint_time_predator,
+            'interval_exctint_time_predator':interval_exctint_time_predator,
+            'acc_exctint_time_predator':acc_exctint_time_predator,
+            'mean_lf_prob_prey': mean_lf_prob_prey,
+            'interval_lf_prob_prey':interval_lf_prob_prey,
+            'interval_lf_prob_prey':interval_lf_prob_prey,
+            'acc_lf_prob_prey':acc_lf_prob_prey,
+            'mean_lf_prob_predator':mean_lf_prob_predator,
+            'interval_lf_prob_predator':interval_lf_prob_predator,
+            'acc_lf_prob_predator':acc_lf_prob_predator
+        }
+    return results
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # MAIN METHOD
@@ -759,17 +836,6 @@ if __name__ == '__main__':
     
     random.seed(args.seed)
     
-    results = []
-    
-    # params = [(init_p, init_lifetime, alpha, lam, p_i) for init_p in args.init_population 
-    #           for init_lifetime in args.init_lifetime 
-    #           for alpha in args.improve_factor
-    #           for lam in args.repr_rate
-    #           for p_i in args.prob_improve]
-    
-    # print(f'params combination: {len(params)}')
-    
-    # for init_p, init_lifetime, alpha, lam, p_i in params:
     
     start_time = datetime.now()
     
@@ -781,20 +847,29 @@ if __name__ == '__main__':
                     for prob_improve_predator,impr_factor_predator in zip(args.prob_improve,args.improve_factor)
                     for repr_rate_prey in args.repr_rate
                     for repr_rate_predator in args.repr_rate
-                    for move_rate in args.move_rate]
+                    for move_rate in args.move_rate if (prob_improve_predator == 1 and prob_improve_prey == 1) or (prob_improve_predator != 1 and prob_improve_prey != 1)]
     
+    tot_results = []
+    acc_results = []
     if args.multiprocessing:
-        num_processes = min(len(params),multiprocessing.cpu_count())
-        seeds = [random.randint(0, 100_000) for _ in range(num_processes)]
+        num_processes = multiprocessing.cpu_count()
         pool = multiprocessing.Pool(processes=num_processes)
-        print(f'Number of combination to simulate = {len(params)} with {num_processes} processes in parallel')
+        print(f'Number of combination to simulate = {len(params)} with {num_processes} processes in parallel')        
         
-        params_seed = [tuple(param + (seed,)) for param,seed in zip(params,seeds)]
-        
-        print(f'{len(params) = } - {len(seeds) = } - {len(params_seed) = }')
-        
-        with multiprocessing.Pool(processes=num_processes) as p:
-            simulation_results = p.map(simulate_wrapper, params_seed)
+        for param in params:
+            acc_result = None
+            while acc_result is None:
+                tot_results = []
+                seeds = [random.randint(0, 100_000) for _ in range(num_processes)]
+                with multiprocessing.Pool(processes=num_processes) as p:
+                    param_seed = [tuple(param + (seed,)) for seed in seeds]   
+                    print(f'{len(params) = } - {len(seeds) = } - {len(param_seed) = }')             
+                    simulation_results = p.map(simulate_wrapper, param_seed)
+                tot_results.extend(simulation_results)
+                acc_result = intervals_wrapper(param, tot_results, args.confidence_level, args.accuracy_threshold)
+                # acc_result['exctinct_prob_predator'] = sum(int(data.is_species_exctinct['wolf']) for data in tot_results) / len(tot_results)
+                # acc_result['exctinct_prob_prey'] = sum(int(data.is_species_exctinct['sheep']) for data in tot_results) / len(tot_results)
+            acc_results.append(pd.DataFrame([acc_result])) 
         
         pool.close()
         pool.join()
@@ -803,9 +878,22 @@ if __name__ == '__main__':
             loop = params
         else:
             loop = tqdm(params, desc='Simulating in sequence...')
-        for param in loop:
-            simulate_wrapper(param + (args.seed,))
         
+        for param in loop:
+            i = 0
+            acc_result = None
+            while acc_result is None:
+                simulation_results = simulate_wrapper(param + (args.seed,))
+                
+                if i % 6 == 0:
+                    tot_results.append(simulation_results)
+                    acc_result = intervals_wrapper(param=param, tot_results=tot_results, conf=args.confidence_level, acc_threshold=args.accuracy_threshold)
+                    # acc_result['exctinct_prob_predator'] = sum(int(data.is_species_exctinct['wolf']) for data in tot_results) / len(tot_results)
+                    # acc_result['exctinct_prob_prey'] = sum(int(data.is_species_exctinct['sheep']) for data in tot_results) / len(tot_results)
+            acc_results.append(acc_result)
+    print(acc_results)
+    
+    plot_accuracy_results(pd.concat(acc_results, ignore_index=True))
     
     # if args.verbose:
     #     print(f'Number of combination to simulate = {len(params)}')
