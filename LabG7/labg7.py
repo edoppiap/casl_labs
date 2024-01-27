@@ -77,8 +77,6 @@ parser.add_argument('--init_population', '--p', type=int, default=[1_000], nargs
                     help='Number of individuals for the 1st generation')
 parser.add_argument('--improve_factor', '--alpha', type=float, default=[0,.5,.5], nargs='+',
                     help='Improve factor that an individual can develop at birth')
-# parser.add_argument('--init_lifetime', type=int, default=[356 * 3], nargs='+', # 3 years
-#                     help='Lifetime of the 1st generation')
 parser.add_argument('--repr_rate', '--lambda', type=float, default=[12/365],
                     help='Rate at which an individual reproduces')
 parser.add_argument('--max_population', type=int, default=50_000,
@@ -87,16 +85,16 @@ parser.add_argument('--grid_dimentions', type=int, default=10,
                     help='Side of the square of the grid dimension')
 parser.add_argument('--av_num_child', type=int, default=3, 
                     help='Number of new_born each individual have each birth')
-parser.add_argument('--in_head_period', type=int, default=30, 
+parser.add_argument('--in_head_period', type=int, default=7, 
                     help='How many days the in-heat period last')
 parser.add_argument('--days_between_hunts', type=int, default=7,
                     help='How many days a predator will not engage fight because has already eaten')
-parser.add_argument('--puberty_time', default=0,
+parser.add_argument('--puberty_time', default=30,
                     help='Number of days before an individual is able to reproduce')
 parser.add_argument('--days_rate_to_move', default=[1], nargs='+',
                     help='At which rate of days move, repr and fight each individuals')
 parser.add_argument('--percentages', default=.4,
-                    help='Percentage of the whole individual that each species will be')
+                    help='Percentage of predators out of total')
 parser.add_argument('--initial_transient', default=0, type=int,
                     help='Initial period in which the individuals do not fight but only reproduce')
 parser.add_argument('--move_rate', default=[.01], type=float, nargs='+',
@@ -405,7 +403,7 @@ def move(current_time, population: Population, individual: Individual, move_rate
             'prey' in [ind.species['type'] for ind in world[new_position]['individuals']]:
             FES.put(Event(current_time, 'fight', individual))
         
-        if individual.sex == 'Y':
+        if individual.sex == 'Y' and current_time - individual.birth_time > individual.species['puberty_time']:
             FES.put(Event(current_time, 'mate', individual))
             
         next_move_time = current_time + random.expovariate(move_rate)
@@ -456,7 +454,7 @@ def birth(current_time, new_born: Individual, FES: PriorityQueue, population, mo
         
         # schedule all the heat event relative if it's a female
         if new_born.sex == 'X':
-            heat_time = current_time + random.expovariate(new_born.species['av_repr_rate'])
+            heat_time = current_time + new_born.species['puberty_time'] + random.expovariate(new_born.species['av_repr_rate'])
             FES.put(Event(heat_time, 'start_heat', new_born))
                 
         next_move_time = current_time + random.expovariate(move_rate)
@@ -467,7 +465,7 @@ def start_in_heat(current_time, individual: Individual, FES: PriorityQueue, worl
         individual.in_heat = True
         FES.put(Event(current_time + individual.species['in_heat_period'], 'stop_heat', individual))
         
-        males = [ind for ind in world[individual.current_position]['individuals'] if ind.species['name'] == individual.species['name'] and ind.sex == 'Y']
+        males = [ind for ind in world[individual.current_position]['individuals'] if ind.species['name'] == individual.species['name'] and ind.sex == 'Y' and current_time - ind.birth_time > ind.species['puberty_time']]
         if len(males) > 1:
             FES.put(Event(current_time, 'mate', random.choice(males)))
     
@@ -601,13 +599,15 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
 #
 #
 def plot_results(data: Measure, param, folder_path = None, end_time = None):
-    init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, repr_rate_prey, repr_rate_predator, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
-               days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, _, _ = param
+    init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, repr_rate_prey, \
+        repr_rate_predator, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
+        days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, _, _ = param
             
     time_size_pop = data.time_size_pop
     
     current_time = datetime.now().strftime("%d-%m-%Y_%H-%M-%S-%f")
-    output_str = f'Input parameters: \n{init_p = },\n{prob_improve_prey = },\n{impr_factor_prey = },\n{prob_improve_predator = },\n{impr_factor_predator = }\n{repr_rate_prey = },\n{repr_rate_predator = },\n' \
+    output_str = f'Input parameters: \n{init_p = },\n{prob_improve_prey = },\n{impr_factor_prey = },\n{prob_improve_predator = },\n' \
+        + f'{impr_factor_predator = }\n{repr_rate_prey = },\n{repr_rate_predator = },\n' \
         + f'{num_child_predator = },\n{num_child_prey = }\n{heat_period_predator = },\n{heat_period_prey = },\n{days_between_hunts = },\n' \
         + f'{puberty_time_predator = },\n{percent = },\n{puberty_time_prey = },\n{move_rate = }\n{world_dim = }.' \
         + f'{args.decrease_factor = },\n{args.increase_factor = }\n{args.pop_threshold = }.\n\n'
@@ -708,9 +708,11 @@ def create_folder_path():
     return folder_path
 
 def simulate_wrapper(param):
-    init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, repr_rate_prey, repr_rate_predator, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
-               days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, folder_path, seed = param
-    print(f'Simualte with {init_p = }, {prob_improve_prey = }, {impr_factor_prey = }, {prob_improve_predator = }, {impr_factor_predator = }, {repr_rate_prey = :.4f}, {repr_rate_predator = :.4f}, {world_dim = }')
+    init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, repr_rate_prey, \
+        repr_rate_predator, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
+        days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, folder_path, seed = param
+    print(f'Simualte with {init_p = }, {prob_improve_prey = }, {impr_factor_prey = }, {prob_improve_predator = },'  
+          + f'{impr_factor_predator = }, {repr_rate_prey = :.4f}, {repr_rate_predator = :.4f}, {world_dim = }')
     
     species = copy.deepcopy(SPECIES)
     random.seed(seed)
@@ -771,13 +773,15 @@ if __name__ == '__main__':
     
     start_time = datetime.now()
     
-    params = [(init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, repr_rate_prey, repr_rate_predator, args.av_num_child, args.av_num_child, args.in_head_period, args.in_head_period,
-               args.days_between_hunts, args.puberty_time, args.puberty_time, (args.percentages,1-args.percentages), move_rate, args.grid_dimentions, args, folder_path) for init_p in args.init_population
-              for prob_improve_prey,impr_factor_prey in zip(args.prob_improve,args.improve_factor)
-              for prob_improve_predator,impr_factor_predator in zip(args.prob_improve,args.improve_factor)
-              for repr_rate_prey in args.repr_rate
-              for repr_rate_predator in args.repr_rate
-              for move_rate in args.move_rate]
+    params = [(init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, 
+               repr_rate_prey, repr_rate_predator, args.av_num_child, args.av_num_child, args.in_head_period, args.in_head_period,
+               args.days_between_hunts, args.puberty_time, args.puberty_time, (args.percentages,1-args.percentages), move_rate, args.grid_dimentions, args, folder_path) 
+                    for init_p in args.init_population
+                    for prob_improve_prey,impr_factor_prey in zip(args.prob_improve,args.improve_factor)
+                    for prob_improve_predator,impr_factor_predator in zip(args.prob_improve,args.improve_factor)
+                    for repr_rate_prey in args.repr_rate
+                    for repr_rate_predator in args.repr_rate
+                    for move_rate in args.move_rate]
     
     if args.multiprocessing:
         num_processes = min(len(params),multiprocessing.cpu_count())
