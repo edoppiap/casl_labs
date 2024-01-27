@@ -109,9 +109,9 @@ parser.add_argument('--pop_threshold', type=int, default=1_000,
 # Simulation parameters
 parser.add_argument('--sim_time', type=int, default=356 * 35, # 35 years
                     help='Time to run the simulation')
-parser.add_argument('--accuracy_threshold', type=float, default=.8,
+parser.add_argument('--accuracy_threshold', type=float, default=.9,
                     help='Accuracy value for which we accept the result')
-parser.add_argument('--confidence_level', type=float, default=.8,
+parser.add_argument('--confidence_level', type=float, default=.9,
                     help='Value of confidence we want for the accuracy calculation')
 parser.add_argument('--verbose', action='store_true',
                     help='To see the progress of the simulation')
@@ -611,29 +611,28 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
 # PLOT RESULTS
 #
 #
-def plot_results(data: Measure, param, folder_path = None, end_time = None):
+def plot_results(data: Measure, param, current_time: str = None, folder_path = None, end_time = None, idx=None):
     init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, repr_rate_prey, \
         repr_rate_predator, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
-        days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, _, _ = param
+        days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, _ = param
             
     time_size_pop = data.time_size_pop
     
-    current_time = datetime.now().strftime("%d-%m-%Y_%H-%M-%S-%f")
     output_str = f'Input parameters: \n{init_p = },\n{prob_improve_prey = },\n{impr_factor_prey = },\n{prob_improve_predator = },\n' \
         + f'{impr_factor_predator = }\n{repr_rate_prey = },\n{repr_rate_predator = },\n' \
         + f'{num_child_predator = },\n{num_child_prey = }\n{heat_period_predator = },\n{heat_period_prey = },\n{days_between_hunts = },\n' \
         + f'{puberty_time_predator = },\n{percent = },\n{puberty_time_prey = },\n{move_rate = }\n{world_dim = }.' \
         + f'{args.decrease_factor = },\n{args.increase_factor = }\n{args.pop_threshold = }.\n\n'
-    output_str += f'Wolf kills sheep with a rate of {sum(i for i,_ in data.num_win) / (end_time - args.initial_transient)} hunts/day\n'
+    output_str += f'Wolf kills sheep with a rate of {sum(i for i,_ in data.num_win) / (data.end_time - args.initial_transient)} hunts/day\n'
     for species in data.birth_per_species:
-        output_str += f'{species.capitalize()} have a new_born with a rate of {data.birth_per_species[species] / end_time} birth/day\n'
+        output_str += f'{species.capitalize()} have a new_born with a rate of {data.birth_per_species[species] / data.end_time} birth/day\n'
         output_str += f'{species.capitalize()} total birth events: {data.birth_per_species[species]}\n'
-        output_str += f'{species.capitalize()} have a new_death with a rate of {data.death_per_species[species] / end_time} deaths/day\n'
+        output_str += f'{species.capitalize()} have a new_death with a rate of {data.death_per_species[species] / data.end_time} deaths/day\n'
         output_str += f'{species.capitalize()} total deaths events: {data.death_per_species[species]}\n'
     output_str += f'End time = {end_time}'
     
     if folder_path:
-        file_name = os.path.join(folder_path, f'{current_time}_logs.txt')
+        file_name = os.path.join(folder_path, f'{idx}_{current_time}_logs.txt')
         with open(file_name, 'w') as f:
             f.write(output_str)
     else:
@@ -649,7 +648,7 @@ def plot_results(data: Measure, param, folder_path = None, end_time = None):
         plt.grid()
         plt.legend()
         if folder_path:
-            file_name = os.path.join(folder_path, f'{current_time}_pop_time_species.')
+            file_name = os.path.join(folder_path, f'{idx}_{current_time}_pop_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
@@ -669,7 +668,7 @@ def plot_results(data: Measure, param, folder_path = None, end_time = None):
         plt.legend()
         plt.grid(True)
         if folder_path:
-            file_name = os.path.join(folder_path, f'{current_time}_birth_gen_time_species.')
+            file_name = os.path.join(folder_path, f'{idx}_{current_time}_birth_gen_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
@@ -689,13 +688,13 @@ def plot_results(data: Measure, param, folder_path = None, end_time = None):
         plt.legend()
         plt.grid(True)
         if folder_path:
-            file_name = os.path.join(folder_path, f'{current_time}_life_expectancy_gen_time_species.')
+            file_name = os.path.join(folder_path, f'{idx}_{current_time}_life_expectancy_gen_time_species.')
             plt.savefig(file_name, dpi=300, bbox_inches='tight')
             plt.close()
         else:
             plt.show()
             
-def plot_accuracy_results(acc_results, folder_path = None):
+def plot_accuracy_results(acc_results, current_time: str = None, folder_path = None):
     
     plt.figure(figsize=(12,8))
     plt.plot(acc_results['prob_improve_prey'], acc_results['mean_exctint_time_prey'], marker='o', label='Average exctint time')
@@ -711,7 +710,12 @@ def plot_accuracy_results(acc_results, folder_path = None):
     plt.title('Mean time of extinction vs probability of improvement (prey)')
     plt.grid(True)
     plt.legend()
-    plt.show()
+    if folder_path:
+        file_name = os.path.join(folder_path, f'{current_time}_extinction_time_prob.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
     
     
 #--------------------------------------------------------------------------------------------------------------------------------------------#
@@ -733,9 +737,8 @@ def create_folder_path():
 def simulate_wrapper(param):
     init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, repr_rate_prey, \
         repr_rate_predator, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
-        days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, folder_path, seed = param
-    print(f'Simualte with {init_p = }, {prob_improve_prey = }, {impr_factor_prey = }, {prob_improve_predator = },'  
-          + f'{impr_factor_predator = }, {repr_rate_prey = :.4f}, {repr_rate_predator = :.4f}, {world_dim = }')
+        days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, _, seed = param
+    print(f'Simualte with {prob_improve_prey = }, {prob_improve_predator = }, {seed = }')
     
     species = copy.deepcopy(SPECIES)
     random.seed(seed)
@@ -792,8 +795,13 @@ def intervals_wrapper(param:tuple, tot_results: list, conf, acc_threshold):
     mean_time,interval_time,acc_time = calculate_confidence_interval([data.end_time for data in tot_results],conf)
     mean_exctint_time_prey,interval_exctint_time_prey, acc_exctint_time_prey = calculate_confidence_interval([data.is_species_exctinct.setdefault('sheep', None) for data in tot_results],conf)
     mean_exctint_time_predator,interval_exctint_time_predator, acc_exctint_time_predator = calculate_confidence_interval([data.is_species_exctinct.setdefault('wolf', None) for data in tot_results],conf)
-    mean_lf_prob_prey,interval_lf_prob_prey,acc_lf_prob_prey = calculate_confidence_interval([gen['tot lf'] / gen['n birth'] for data in tot_results for gen in data.birth_per_gen_per_species['sheep'].values()],conf)
-    mean_lf_prob_predator,interval_lf_prob_predator,acc_lf_prob_predator = calculate_confidence_interval([gen['tot lf'] / gen['n birth'] for data in tot_results for gen in data.birth_per_gen_per_species['wolf'].values()],conf)
+    av_lf_prey = [value['tot lf'] / value['n birth'] for data in tot_results for key,value in data.birth_per_gen_per_species['sheep'].items() if key > 0]
+    mean_lf_prob_prey,interval_lf_prob_prey,acc_lf_prob_prey = calculate_confidence_interval(av_lf_prey,conf)
+    av_lf_predator = [value['tot lf'] / value['n birth'] for data in tot_results for key,value in data.birth_per_gen_per_species['wolf'].items() if key > 0]
+    mean_lf_prob_predator,interval_lf_prob_predator,acc_lf_prob_predator = calculate_confidence_interval(av_lf_predator,conf)
+    
+    # acc_result['exctinct_prob_predator'] = sum(int(data.is_species_exctinct['wolf']) for data in tot_results) / len(tot_results)
+    # acc_result['exctinct_prob_prey'] = sum(int(data.is_species_exctinct['sheep']) for data in tot_results) / len(tot_results)
     
     results = None
     if acc_time > acc_threshold and acc_lf_prob_prey > acc_threshold and acc_lf_prob_predator > acc_threshold:
@@ -803,20 +811,26 @@ def intervals_wrapper(param:tuple, tot_results: list, conf, acc_threshold):
             'prob_improve_predator':param[3],
             'impr_factor_predator':param[4],
             'mean_time' : mean_time,
-            'interval_time': interval_time,
+            'interval_time_low': interval_time[0],
+            'interval_time_up': interval_time[1],
             'acc_time':acc_time,
             'mean_exctint_time_prey':mean_exctint_time_prey,
-            'interval_exctint_time_prey':interval_exctint_time_prey,
+            'interval_exctint_time_prey_low':interval_exctint_time_prey[0],
+            'interval_exctint_time_prey_up':interval_exctint_time_prey[1],
             'acc_exctint_time_prey':acc_exctint_time_prey,
+            'exctinct_prob_prey': sum(1 for data in tot_results if data.is_species_exctinct.setdefault('sheep', None) is not None) / len(tot_results),
             'mean_exctint_time_predator':mean_exctint_time_predator,
-            'interval_exctint_time_predator':interval_exctint_time_predator,
+            'interval_exctint_time_predator_low':interval_exctint_time_predator[0],
+            'interval_exctint_time_predator_up':interval_exctint_time_predator[1],
             'acc_exctint_time_predator':acc_exctint_time_predator,
+            'exctinct_prob_prdator': sum(1 for data in tot_results if data.is_species_exctinct.setdefault('wolf', None) is not None) / len(tot_results),
             'mean_lf_prob_prey': mean_lf_prob_prey,
-            'interval_lf_prob_prey':interval_lf_prob_prey,
-            'interval_lf_prob_prey':interval_lf_prob_prey,
+            'interval_lf_prob_prey_low':interval_lf_prob_prey[0],
+            'interval_lf_prob_prey_up':interval_lf_prob_prey[1],
             'acc_lf_prob_prey':acc_lf_prob_prey,
             'mean_lf_prob_predator':mean_lf_prob_predator,
-            'interval_lf_prob_predator':interval_lf_prob_predator,
+            'interval_lf_prob_predator_low':interval_lf_prob_predator[0],
+            'interval_lf_prob_predator_up':interval_lf_prob_predator[1],
             'acc_lf_prob_predator':acc_lf_prob_predator
         }
     return results
@@ -831,8 +845,10 @@ if __name__ == '__main__':
     
     if args.not_debug:
         folder_path = create_folder_path()
+        current_time = datetime.now().strftime("%d-%m-%Y_%H-%M-%S-%f")
     else:
         folder_path = None
+        current_time = None
     
     random.seed(args.seed)
     
@@ -849,12 +865,13 @@ if __name__ == '__main__':
                     for repr_rate_predator in args.repr_rate
                     for move_rate in args.move_rate if (prob_improve_predator == 1 and prob_improve_prey == 1) or (prob_improve_predator != 1 and prob_improve_prey != 1)]
     
-    tot_results = []
+    result_to_plot = []
     acc_results = []
     if args.multiprocessing:
         num_processes = multiprocessing.cpu_count()
         pool = multiprocessing.Pool(processes=num_processes)
-        print(f'Number of combination to simulate = {len(params)} with {num_processes} processes in parallel')        
+        print(f'Number of combination to simulate = {len(params)} with {num_processes} processes in parallel\n'
+            + f'to reach {args.accuracy_threshold * 100}% accuracy with confidence level = {args.confidence_level * 100:.0f}%')        
         
         for param in params:
             acc_result = None
@@ -862,14 +879,12 @@ if __name__ == '__main__':
                 tot_results = []
                 seeds = [random.randint(0, 100_000) for _ in range(num_processes)]
                 with multiprocessing.Pool(processes=num_processes) as p:
-                    param_seed = [tuple(param + (seed,)) for seed in seeds]   
-                    print(f'{len(params) = } - {len(seeds) = } - {len(param_seed) = }')             
+                    param_seed = [tuple(param + (seed,)) for seed in seeds]        
                     simulation_results = p.map(simulate_wrapper, param_seed)
                 tot_results.extend(simulation_results)
                 acc_result = intervals_wrapper(param, tot_results, args.confidence_level, args.accuracy_threshold)
-                # acc_result['exctinct_prob_predator'] = sum(int(data.is_species_exctinct['wolf']) for data in tot_results) / len(tot_results)
-                # acc_result['exctinct_prob_prey'] = sum(int(data.is_species_exctinct['sheep']) for data in tot_results) / len(tot_results)
-            acc_results.append(pd.DataFrame([acc_result])) 
+            acc_results.append(pd.DataFrame([acc_result]))
+            result_to_plot.append((param,random.choice(tot_results)))
         
         pool.close()
         pool.join()
@@ -880,6 +895,7 @@ if __name__ == '__main__':
             loop = tqdm(params, desc='Simulating in sequence...')
         
         for param in loop:
+            tot_results = []
             i = 0
             acc_result = None
             while acc_result is None:
@@ -888,62 +904,14 @@ if __name__ == '__main__':
                 if i % 6 == 0:
                     tot_results.append(simulation_results)
                     acc_result = intervals_wrapper(param=param, tot_results=tot_results, conf=args.confidence_level, acc_threshold=args.accuracy_threshold)
-                    # acc_result['exctinct_prob_predator'] = sum(int(data.is_species_exctinct['wolf']) for data in tot_results) / len(tot_results)
-                    # acc_result['exctinct_prob_prey'] = sum(int(data.is_species_exctinct['sheep']) for data in tot_results) / len(tot_results)
-            acc_results.append(acc_result)
-    print(acc_results)
+            acc_results.append(pd.DataFrame([acc_result]))
+            result_to_plot.append((param,random.choice(tot_results)))
     
-    plot_accuracy_results(pd.concat(acc_results, ignore_index=True))
-    
-    # if args.verbose:
-    #     print(f'Number of combination to simulate = {len(params)}')
-    #     loop = params
-    # else:
-    #     loop = tqdm(params, desc='Simulating all combination of parameters')
-    
-    # for param in loop:
-    #     init_p, prob_improve, impr_factor, repr_rate_prey, repr_rate_predator, world_dim = param
-        
-    #     SPECIES['wolf']['av_repr_rate'] = repr_rate_predator
-    #     SPECIES['sheep']['av_repr_rate'] = repr_rate_prey
-        
-    #     if args.verbose:
-    #         print(f'Simulating with {init_p = } and {world_dim = }')
-    #         print(f'{init_p // world_dim**2} ind for cell')
-    #         print(f'Simualte with {init_p = }, {prob_improve = }, {impr_factor = }, {repr_rate_prey = }, {repr_rate_predator = }, {world_dim = }')
-        
-    #     data = Measure()
-    #     # print(f'Simulate with init_p={init_p} - init_lifetime={init_lifetime} - alpha={alpha} - lambda={lam} - p_i={p_i}')
-    #     end_time = simulate(init_p=init_p, 
-    #                         prob_improve=prob_improve, 
-    #                         impr_factor=impr_factor, 
-    #                         world_dim=world_dim, 
-    #                         data=data,
-    #                         args=args)
-        
-    #     # result = {
-    #     #     'init_p': init_p,
-    #     #     'init_lifetime':init_lifetime,
-    #     #     'alpha': alpha,
-    #     #     'lambda':lam,
-    #     #     'p_i':p_i,
-    #     #     'num_birth': data.num_birth,
-    #     #     'num_death': data.num_death,
-    #     #     'average_pop': data.average_pop/end_time,
-    #     #     # 'gen_num': len(data.birth_per_gen),
-    #     #     'end_time': end_time
-    #     # }
-    #     # results.append(pd.DataFrame([result]))
-    #     plot_results(data, folder_path=folder_path, param=param)
-        
-    #     if args.verbose: print('\n-----------------------------------\n')
-    
-    # if len(data.birth_per_gen) > 7:
-    #     plot_gen_birth(data.time_size_pop,data.birth_per_gen, folder_path, init_p, init_lifetime, alpha, lam, p_i)
-    
-    # result_df = pd.concat(results, ignore_index=True)
+    acc_results_df = pd.concat(acc_results, ignore_index=True)
+    file_name = os.path.join(folder_path, 'results.csv')
+    acc_results_df.to_csv(file_name)
+    for i,(param,data) in enumerate(result_to_plot):
+        plot_results(data, param, current_time, folder_path, idx=i)
+    plot_accuracy_results(acc_results_df, current_time=current_time, folder_path=folder_path)
     
     print(f'The simulation took {datetime.now() - start_time}')
-    
-    #file_name = os.path.join(folder_path, 'results.csv')
-    #result_df.to_csv(file_name)
