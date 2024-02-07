@@ -46,7 +46,9 @@
     
     --multiprocessing --not_debug --accuracy_threshold 0.8 --confidence_leve 0.8 --move_rate .01 --prob_improve 1 --improve_factor 0
     
-    --verbose --move_rate  1 --prob_improve 1 --improve_factor 0
+    --verbose --prob_improve 1 --improve_factor 0 --grid_dimentions 10 --sim_time 1000 --percentage .5 --fight_rate 0.025 --repr_rate 0.05 --increase_factor 1.01
+    
+    --verbose --prob_improve 1 --improve_factor 0 --grid_dimentions 10 --sim_time 1000 --percentage .3 --fight_rate 0.027 --repr_rate 0.08 --increase_factor 1.1 --decrease_factor 0.9 --initial_transient 60 --pop_threshold 500
 
 """
 
@@ -98,7 +100,7 @@ parser.add_argument('--fight_rate', type=float, default=[.025], nargs='+',
                     help='Rate at which the predator hunts for prey')
 parser.add_argument('--win_prob', type=float, default=.1,
                     help='Probability that a single predator has to have a successful hunt')
-parser.add_argument('--puberty_time', default=0, type=float,
+parser.add_argument('--puberty_time', default=15, type=float,
                     help='Number of days before an individual is able to reproduce')
 parser.add_argument('--percentages', default=.4, type=float,
                     help='Percentage of predators out of total')
@@ -110,7 +112,7 @@ parser.add_argument('--decrease_factor', type=float, default=.89,
                     help='Decrease factor for reducing the repr_rate')
 parser.add_argument('--increase_factor', type=float, default=1.009,
                     help='Decrease factor for reducing the repr_rate')
-parser.add_argument('--pop_threshold', type=int, default=1_000,
+parser.add_argument('--pop_threshold', type=int, default=250,
                     help='Number of individual that change the repr_rate in a population')
 
 # Simulation parameters
@@ -145,12 +147,12 @@ SPECIES = {
         'av_num_child_per_birth': 5,
         'type':'predator',
         'puberty_time': 0, # 2 months
-        'max_day_with_no_food': 14, # 3 weeks
+        'max_day_with_no_food': 10, # 3 weeks
         'fight_rate': 1/20,
         'starve_rate': 1/21,
-        'in_heat_period': 14, # 2 weeks
-        'pregnancy_duration': 2 * 30, # 2 months
-        'days_between_hunts': 3,
+        'in_heat_period': 7, # 2 weeks
+        'pregnancy_duration': 40, # 3 months
+        'days_between_hunts': 5,
         'attack_on_group': True
     },
     'sheep': {
@@ -159,14 +161,14 @@ SPECIES = {
         'improv_factor':.2,
         'prob_improve':.9,
         'av_repr_rate': 3 / 365, # once a year on average 
-        'av_num_child_per_birth': 5,
+        'av_num_child_per_birth': 3,
         'type':'prey',
         'puberty_time': 0, # 2 months
         'max_day_with_no_food': None,
         'fight_rate':None,
         'starve_rate': None,
-        'in_heat_period': 14, # 2 weeks
-        'pregnancy_duration': 3 * 30, # 5 months
+        'in_heat_period': 7, # 2 weeks
+        'pregnancy_duration':  25, # 2 months
         'days_between_hunts': None,
         'attack_on_group': None
     }
@@ -311,6 +313,7 @@ class Event:
         
     def __lt__(self, other):
         return self.time < other.time
+        
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # DEATH EVENT
@@ -365,95 +368,111 @@ def mate(current_time, current_ind: Individual, FES: PriorityQueue, data: Measur
 #
 # in a fight event the predator will seek for preys, if there are more predator in the same position, they will form a group of max 3 individual
 # to have higher chance of killing the prey        
-def fight(current_time, individual: Individual, FES: PriorityQueue, data: Measure, world: World, win_prob):
-    pos = world[individual.current_position]
-    if len(pos['individuals']) > 2:
-        other_predators = [ind for ind in pos['individuals'] if ind.species['type'] == 'predator' # select all predator
-                           and ind != individual # but not the current individual
-                           and current_time - ind.last_hunt_time >= ind.species['days_between_hunts']] # not all predator are interested in eating a new prey
-        preys = [ind for ind in pos['individuals'] if ind.species['type'] == 'prey'] # select all preys
-        if len(preys) == 0:
-            return # there is no change to have a fight TODO: models if two individuals of the same species can fight eachother
+def fight(current_time, population: Population, individual: Individual, FES: PriorityQueue, data: Measure, world: World, init_win_prob):
+    if individual not in population[individual.species['name']]: # check if the individual is dead
+        return
+    
+    if current_time - individual.last_hunt_time >= individual.species['days_between_hunts']: # if the individual has already eaten is not interested in hunt again
         
-        data.num_fight += 1
-        # each predator wants to hunt a prey
-        # (it can be also model that more than one predator hunt the same prey,
-        #  the winning prob should be higher in that case)
-        if False: # a predator attack a single prey 
-            prey = random.choice(preys)
-            if random.random() < 1: # TODO: the winning prob should be 1) an input or 2) a parameters given by the inds chars
-                # predator wins
-                death_event = Event(current_time, 'death', prey)
-                FES.put(death_event) # kill the prey
-                
-                # update predator variables
-                individual.last_hunt_time = current_time# schedule the next starve event
-                starve_time = 0
-                while starve_time < individual.species['max_day_with_no_food']:
-                    starve_time = random.expovariate(individual.species['starve_rate'])
-                FES.put(Event(current_time + starve_time, 'starve', individual))
-                
-                # schedule the next fight event
-                hunt_time = 0
-                while hunt_time < individual.species['days_between_hunts']:
-                    hunt_time = random.expovariate(individual.species['fight_rate'])
-                FES.put(Event(current_time + hunt_time, 'fight', individual))
-                data.num_win.append((1,0))
-                return
-            else:
-                data.num_win.append((0,1))
-        else: # more than one predator can attack a single prey
-            # create the group 
-            # if there is a single predator the group will be formed only by him
-            n_predator_each_pray = 3
-            # n_groups_of_predators = math.ceil(len(predators) / n_predator_each_pray)                    
-            # predators_tuples = [(predators[i*3:(i+1)*3] + [None] * (3 - len(predators[i*3:(i+1)*3]))) for i in range(n_groups_of_predators)]
+        try:
+            # winning probability depends on the number of predators individual in the whole population (this will prevent to have overkill predators)
+            win_prob = min(1, init_win_prob / (len(population[individual.species['name']]) / 120)) # TODO: this should be a parameter
+        except ZeroDivisionError:
+            return
+        
+        pos = world[individual.current_position]
+        if len(pos['individuals']) > 2:
+            other_predators = [ind for ind in pos['individuals'] if ind.species['type'] == 'predator' # select all predator
+                            and ind != individual # but not the current individual
+                            and current_time - ind.last_hunt_time >= ind.species['days_between_hunts']] # not all predator are interested in eating a new prey
+            # select all preys
+            hide_prob = min(1, .2 * (len(population['sheep']) / 150)) #TODO: this should be a parameter
+            preys = [ind for ind in pos['individuals'] if ind.species['type'] == 'prey' and
+                     random.random() < hide_prob] # % of the preys is able to successfully hide from the predator
             
-            group_of_predators = [individual]
-            for _ in range(n_predator_each_pray):
-                if len(other_predators) == 0: break
-                other_predator = random.choice(other_predators)
-                group_of_predators.append(other_predator)
-                other_predators.remove(other_predator)
-                
+            if len(preys) > 0: # otherwise there is no change to have a fight TODO: models if two individuals of the same species can fight eachother
             
-            # for each group select a random prey and start a fight            
-            prey_to_attack = random.choice(preys) # the group choice a prey from the 
-            
-            # this will mean
-            # one predator vs one prey = 40% chance of win
-            # two predator vs one prey = 80% chance of win
-            # three predator vs one prey > 100% chance of win
-            win_prob = win_prob * len(group_of_predators) # TODO: the probability should be an input parameter
-            if random.random() < win_prob: # predators win
-                data.num_win.append((1,0))
-                FES.put(Event(current_time, 'death', prey_to_attack)) # add the death event for the prey into the FES
-                for pred in group_of_predators:
-                    pred.last_hunt_time = current_time # saving that the predators has eaten
+                data.num_fight += 1
+                # each predator wants to hunt a prey
+                # (it can be also model that more than one predator hunt the same prey,
+                #  the winning prob should be higher in that case)
+                if False: # a predator attack a single prey 
+                    prey = random.choice(preys)
+                    if random.random() < 1: # TODO: the winning prob should be 1) an input or 2) a parameters given by the inds chars
+                        # predator wins
+                        death_event = Event(current_time, 'death', prey)
+                        FES.put(death_event) # kill the prey
+                        
+                        # update predator variables
+                        individual.last_hunt_time = current_time# schedule the next starve event
+                        starve_time = 0
+                        while starve_time < individual.species['max_day_with_no_food']:
+                            starve_time = random.expovariate(individual.species['starve_rate'])
+                        FES.put(Event(current_time + starve_time, 'starve', individual))
+                        
+                        # schedule the next fight event
+                        hunt_time = 0
+                        while hunt_time < individual.species['days_between_hunts']:
+                            hunt_time = random.expovariate(individual.species['fight_rate'])
+                        FES.put(Event(current_time + hunt_time, 'fight', individual))
+                        data.num_win.append((1,0))
+                        return
+                    else:
+                        data.num_win.append((0,1))
+                else: # more than one predator can attack a single prey
+                    # create the group 
+                    # if there is a single predator the group will be formed only by him
+                    n_predator_each_pray = 3
+                    # n_groups_of_predators = math.ceil(len(predators) / n_predator_each_pray)                    
+                    # predators_tuples = [(predators[i*3:(i+1)*3] + [None] * (3 - len(predators[i*3:(i+1)*3]))) for i in range(n_groups_of_predators)]
                     
-                    # schedule the next starve event
-                    starve_time = 0
-                    while starve_time < pred.species['max_day_with_no_food']: # TODO: this should be an input parameter
-                        starve_time = random.expovariate(pred.species['starve_rate'])
-                    FES.put(Event(current_time + starve_time, 'starve', pred))
+                    group_of_predators = [individual]
+                    for _ in range(n_predator_each_pray):
+                        if len(other_predators) == 0: break
+                        other_predator = random.choice(other_predators)
+                        group_of_predators.append(other_predator)
+                        other_predators.remove(other_predator)
+                        
                     
-                    # schedule the next fight event
-                    hunt_time = 0
-                    while hunt_time < pred.species['days_between_hunts']:
-                        hunt_time = random.expovariate(pred.species['fight_rate']) # TODO: this should be an input parameter predation_rate
-                    FES.put(Event(current_time + hunt_time, 'fight', pred))
-                
-                return # we can end the event here
-            else: # prey win
-                data.num_win.append((0,1))
-            
-    # PREDATOR HASN'T EATEN
+                    # for each group select a random prey and start a fight            
+                    prey_to_attack = random.choice(preys) # the group choice a prey from the 
+                    
+                    # this will mean
+                    # that the total winnin probability depends on the number of predators that takes part at the fight 
+                    win = win_prob * len(group_of_predators) 
+                    if random.random() < win: # predators win
+                        data.num_win.append((1,0))
+                        FES.put(Event(current_time, 'death', prey_to_attack)) # add the death event for the prey into the FES
+                        for predator in group_of_predators:
+                            predator.last_hunt_time = current_time # saving that the predators has eaten
+                            
+                            # here i'm not scheduling new events associated ad each predator
+                            # because this will add too many events during the simulation
+                        
+                    else: # prey win
+                        data.num_win.append((0,1))
+    
+    #---------------------------------------------------------------------------------------------------------------------------------------#
+    # schedule the next fight and starve event
+    #
+    #
+    
     # starve_time = random.expovariate(1 / 7) # TODO: this should be an input parameter
     # FES.put(Event(current_time + starve_time, 'starve', individual))     
             
     # schedule a new fight event because the predator hasn't eaten
-    hunt_time = random.expovariate(individual.species['fight_rate']) # the predator will hunt almost immediately because he's hungry
+    hunt_time = 0
+    while hunt_time < individual.species['days_between_hunts']:
+        hunt_time = random.expovariate(individual.species['fight_rate']) # the predator will hunt almost immediately because he's hungry
     FES.put(Event(current_time + hunt_time, 'fight', individual))
+    
+    # schedule the next starve event
+    starve_time = 0
+    while starve_time < individual.species['max_day_with_no_food']: # TODO: this should be an input parameter
+        starve_time = random.expovariate(individual.species['starve_rate'])
+    FES.put(Event(current_time + starve_time, 'starve', individual))
+    
+    # here a new fight event should be scheduled only if there aren't any already present in the FES, otherwise it could lead to a too high number of fight event
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # STARVE EVENT
@@ -465,10 +484,10 @@ def starve(current_time, population: Population, individual: Individual, FES: Pr
         and individual.species['type'] == 'predator' \
         and current_time - individual.last_hunt_time > individual.species['max_day_with_no_food']: # check if the individual hasn't eaten yet
             
-        FES.put(Event(current_time, 'death', individual))
-        data.starve_death += 1
+        # FES.put(Event(current_time, 'death', individual))
+        # data.starve_death += 1
         
-        return
+        # return
         
         # check if the individual is not an infant, if it is he can live only if the mother is still alive
         # this because we suppose than a young individual doesn't need to hunt because the mother will do for him (even if the position is not ensured to be the same of the mother one)
@@ -554,10 +573,15 @@ def birth(current_time, new_born: Individual, FES: PriorityQueue, population: Po
         
         # schedule the first heat event relative if it's a female
         if new_born.sex == 'X':
-            # data.stringa += f'Birth_time = {new_born.birth_time}\n'
-            heat_time = current_time + new_born.species['puberty_time'] + random.expovariate(new_born.species['av_repr_rate'])
-            FES.put(Event(heat_time, 'start_heat', new_born))
-            # data.stringa += f'First heat_event = {heat_time}\n'
+            
+            ster_prob = min(1, (len(population[specie]) / 1800))
+            
+            # the higher the number of individual, the more likely is that female is sterile
+            if random.random() > ster_prob: # if ster_prob = 40% -> 60% pass this condition (60% are reproductive)
+                # data.stringa += f'Birth_time = {new_born.birth_time}\n'
+                heat_time = current_time + new_born.species['puberty_time'] + random.expovariate(new_born.species['av_repr_rate'])
+                FES.put(Event(heat_time, 'start_heat', new_born))
+                # data.stringa += f'First heat_event = {heat_time}\n'
             
         if new_born.species['type'] == 'predator':
             # schedule the first starve event
@@ -617,15 +641,15 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
         
         t = event.time
         
-        # -----> PROVA AD USARE LA DERIVATA PER CALCOLARE SE SALE O CRESCE
-        if t>0:
-            data.repr_rate.setdefault('time', []).append(t)
-            for name in population:
-                if len(population[name]) > args.pop_threshold: # and species[name]['av_repr_rate'] > .0001: # increasing
-                    species[name]['av_repr_rate'] *= args.decrease_factor # so let's decrease
-                elif len(population[name]) < args.pop_threshold: # and species[name]['av_repr_rate'] < 1: # decreasing
-                    species[name]['av_repr_rate'] *= args.increase_factor # so let's increase
-                data.repr_rate.setdefault(name, []).append(species[name]['av_repr_rate'])
+        # # -----> PROVA AD USARE LA DERIVATA PER CALCOLARE SE SALE O CRESCE
+        # if t>0:
+        #     data.repr_rate.setdefault('time', []).append(t)
+        #     for name in population:
+        #         if len(population[name]) > args.pop_threshold and species[name]['av_repr_rate'] > .001: # increasing
+        #             species[name]['av_repr_rate'] *= args.decrease_factor # so let's decrease
+        #         elif len(population[name]) < args.pop_threshold and species[name]['av_repr_rate'] < .08: # decreasing
+        #             species[name]['av_repr_rate'] *= args.increase_factor # so let's increase
+        #         data.repr_rate.setdefault(name, []).append(species[name]['av_repr_rate'])
         
         
         if args.verbose:
@@ -642,7 +666,7 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
                     print(f'{n_wolf / world.dim**2} wolfes per cell')
                     print(f'{n_sheep / world.dim**2} sheeps per cell')
                     printed = True
-                print(f'{len(population["wolf"]) = } - {len(population["sheep"]) = } - time = {t:.2f} (days)' + ' '*5, end='\r')
+                print(f'{species['wolf']['av_repr_rate'] = } - {len(population["wolf"]) = } - {species['sheep']['av_repr_rate'] = } - {len(population["sheep"]) = } - time = {t:.2f} (days)' + ' '*5, end='\r')
             else:
                 print(f'Initializing the population...' + ' '*20, end='\r')
         
@@ -695,8 +719,9 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
                   individual=event.individual,
                   FES=FES,
                   data=data,
+                  population=population,
                   world=world,
-                  win_prob=args.win_prob)
+                  init_win_prob=args.win_prob)
         elif event.type == 'starve':
             starve(current_time=t,
                    individual=event.individual,
@@ -718,6 +743,8 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
         if len(population) == 0 or len(population) > args.max_population or t > args.sim_time:
             break
         
+        if t > args.initial_transient and len(population['wolf']) == 0:
+            break        
         
         # if len(population['wolf']) == 0 and data.wolf_death_time is None:
         #     data.wolf_death_time = t
@@ -798,11 +825,11 @@ def plot_results(data: Measure, param, current_time: str = None, folder_path = N
 
     if time_size_pop is not None:
         plt.figure(figsize=(12,8))
-        plt.plot([t for t in time_size_pop['time']],time_size_pop["wolf"],label='Wolf')
-        plt.plot([t for t in time_size_pop['time']],time_size_pop["sheep"],label='Sheep')
+        plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["wolf"],label='Wolf')
+        plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["sheep"],label='Sheep')
         if args.initial_transient != 0:
-            plt.axvline(x=args.initial_transient, ls='--', color='g', label='End initial transient')
-        plt.xlabel('Time (days)')
+            plt.axvline(x=args.initial_transient/365, ls='--', color='g', label='End initial transient')
+        plt.xlabel('Time (years)')
         plt.ylabel('Size of population')
         plt.title(f'Population size over time')
         plt.grid()
