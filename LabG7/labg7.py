@@ -48,7 +48,7 @@
     
     --verbose --prob_improve 1 --improve_factor 0 --grid_dimentions 10 --sim_time 1000 --percentage .5 --fight_rate 0.025 --repr_rate 0.05 --increase_factor 1.01
     
-    --verbose --prob_improve 1 --improve_factor 0 --grid_dimentions 10 --sim_time 1000 --percentage .3 --fight_rate 0.027 --repr_rate 0.08 --increase_factor 1.1 --decrease_factor 0.9 --initial_transient 60 --pop_threshold 500
+    --prob_improve 1 --improve_factor 0 --grid_dimentions 5 --sim_time 3000 --fight_rate 0.2 --repr_rate 0.025 --increase_factor 1.1 --decrease_factor 0.9 --initial_transient 30 --max_population 5000 --init_population 500 --percentage .3 --puberty_time 15
 
 """
 
@@ -151,7 +151,7 @@ SPECIES = {
         'fight_rate': 1/20,
         'starve_rate': 1/21,
         'in_heat_period': 7, # 2 weeks
-        'pregnancy_duration': 40, # 3 months
+        'pregnancy_duration': 40, 
         'days_between_hunts': 5,
         'attack_on_group': True
     },
@@ -168,7 +168,7 @@ SPECIES = {
         'fight_rate':None,
         'starve_rate': None,
         'in_heat_period': 7, # 2 weeks
-        'pregnancy_duration':  25, # 2 months
+        'pregnancy_duration':  25, 
         'days_between_hunts': None,
         'attack_on_group': None
     }
@@ -296,6 +296,8 @@ class Individual():
         if self.sex == 'X':
             self.in_heat = False
             self.pregnant = False
+        else:
+            self.sterile = False
         self.mother = mother
         
     def __str__(self) -> str:
@@ -386,7 +388,7 @@ def fight(current_time, population: Population, individual: Individual, FES: Pri
                             and ind != individual # but not the current individual
                             and current_time - ind.last_hunt_time >= ind.species['days_between_hunts']] # not all predator are interested in eating a new prey
             # select all preys
-            hide_prob = min(1, .2 * (len(population['sheep']) / 150)) #TODO: this should be a parameter
+            hide_prob = min(1, .2 * (len(population['sheep']) / 300)) #TODO: this should be a parameter
             preys = [ind for ind in pos['individuals'] if ind.species['type'] == 'prey' and
                      random.random() < hide_prob] # % of the preys is able to successfully hide from the predator
             
@@ -571,17 +573,22 @@ def birth(current_time, new_born: Individual, FES: PriorityQueue, population: Po
         # schedule the death associated with the new_born
         FES.put(Event(death_time, 'death', new_born))
         
-        # schedule the first heat event relative if it's a female
-        if new_born.sex == 'X':
-            
-            ster_prob = min(1, (len(population[specie]) / 1800))
-            
-            # the higher the number of individual, the more likely is that female is sterile
-            if random.random() > ster_prob: # if ster_prob = 40% -> 60% pass this condition (60% are reproductive)
-                # data.stringa += f'Birth_time = {new_born.birth_time}\n'
+        ster_prob = min(.95, (len(population[specie]) / 1000))
+        
+        # the higher the number of individual, the more likely is that the new_born is sterile
+        if random.random() > ster_prob: # if ster_prob = 40% -> 60% pass this condition (60% are reproductive)
+        
+            # schedule the first heat event relative if it's a female
+            if new_born.sex == 'X':
+                
                 heat_time = current_time + new_born.species['puberty_time'] + random.expovariate(new_born.species['av_repr_rate'])
                 FES.put(Event(heat_time, 'start_heat', new_born))
                 # data.stringa += f'First heat_event = {heat_time}\n'
+            # if it's a male it's already not sterile
+        else:
+            if new_born.sex == 'Y':
+                new_born.sterile = True
+            # if it's a female not schedule the first heat event is enough to make it sterile
             
         if new_born.species['type'] == 'predator':
             # schedule the first starve event
@@ -607,7 +614,11 @@ def start_in_heat(current_time, individual: Individual, population: Population, 
         individual.in_heat = True
         FES.put(Event(current_time + individual.species['in_heat_period'], 'stop_heat', individual))
         
-        males = [ind for ind in world[individual.current_position]['individuals'] if ind.species['name'] == individual.species['name'] and ind.sex == 'Y' and current_time - ind.birth_time > ind.species['puberty_time']]
+        males = [ind for ind in world[individual.current_position]['individuals'] 
+                 if ind.species['name'] == individual.species['name'] and
+                 ind.sex == 'Y' and
+                 current_time - ind.birth_time > ind.species['puberty_time'] and
+                 not ind.sterile]
         if len(males) > 1:
             FES.put(Event(current_time, 'mate', random.choice(males)))
     
