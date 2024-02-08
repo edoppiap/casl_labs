@@ -42,14 +42,13 @@
     instantaneus growth rates prey = dx / dt = alpha * x - beta * x * y
     instantaneus growth rates predator = dy / dt = delta * x * y - gamma * y
     
-    STABLE EQUILIBRIUM NOT FOUND
-    
     --multiprocessing --not_debug --accuracy_threshold 0.8 --confidence_leve 0.8 --move_rate .01 --prob_improve 1 --improve_factor 0
     
     --verbose --prob_improve 1 --improve_factor 0 --grid_dimentions 10 --sim_time 1000 --percentage .5 --fight_rate 0.025 --repr_rate 0.05 --increase_factor 1.01
     
     --prob_improve 1 --improve_factor 0 --grid_dimentions 5 --sim_time 3000 --fight_rate 0.2 --repr_rate 0.025 --increase_factor 1.1 --decrease_factor 0.9 --initial_transient 30 --max_population 5000 --init_population 500 --percentage .3 --puberty_time 15
 
+    --prob_improve 1 --improve_factor 0 --grid_dimentions 5 --sim_time 3000 --fight_rate 0.25 --repr_rate 0.035 --increase_factor 1.1 --decrease_factor 0.9 --initial_transient 30 --max_population 5000 --init_population 500 --percentage .25 --puberty_time 15
 """
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
@@ -144,7 +143,7 @@ SPECIES = {
         'improv_factor':.2,
         'prob_improve':.9,
         'av_repr_rate': 3 / 365, # once a year on average
-        'av_num_child_per_birth': 5,
+        'av_num_child_per_birth': 6,
         'type':'predator',
         'puberty_time': 0, # 2 months
         'max_day_with_no_food': 10, # 3 weeks
@@ -378,7 +377,7 @@ def fight(current_time, population: Population, individual: Individual, FES: Pri
         
         try:
             # winning probability depends on the number of predators individual in the whole population (this will prevent to have overkill predators)
-            win_prob = min(1, init_win_prob / (len(population[individual.species['name']]) / 120)) # TODO: this should be a parameter
+            win_prob = min(1, init_win_prob / (len(population[individual.species['name']]) / (len(population['sheep'])/2.3))) # TODO: this should be a parameter
         except ZeroDivisionError:
             return
         
@@ -388,7 +387,7 @@ def fight(current_time, population: Population, individual: Individual, FES: Pri
                             and ind != individual # but not the current individual
                             and current_time - ind.last_hunt_time >= ind.species['days_between_hunts']] # not all predator are interested in eating a new prey
             # select all preys
-            hide_prob = min(1, .2 * (len(population['sheep']) / 300)) #TODO: this should be a parameter
+            hide_prob = min(1, .2 * (len(population['sheep']) / len(population['wolf'])/2)) #TODO: this should be a parameter
             preys = [ind for ind in pos['individuals'] if ind.species['type'] == 'prey' and
                      random.random() < hide_prob] # % of the preys is able to successfully hide from the predator
             
@@ -754,8 +753,8 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
         if len(population) == 0 or len(population) > args.max_population or t > args.sim_time:
             break
         
-        if t > args.initial_transient and len(population['wolf']) == 0:
-            break        
+        # if t > args.initial_transient and len(population['wolf']) == 0:
+        #     break        
         
         # if len(population['wolf']) == 0 and data.wolf_death_time is None:
         #     data.wolf_death_time = t
@@ -881,8 +880,8 @@ def plot_results(data: Measure, param, current_time: str = None, folder_path = N
             except ZeroDivisionError:
                 print(f'Found ZeroDivisionError in {species} species')
         plt.xlabel('Number of generation')
-        plt.ylabel('Average life expectancy without considering the death for fight outcomes (years)')
-        plt.title(f'Life expectancy per generation')
+        plt.ylabel('Average life expectancy (years)')
+        plt.title(f'Life expectancy (without considering the death for fight outcomes)\n per generation')
         plt.legend()
         plt.grid(True)
         if folder_path:
