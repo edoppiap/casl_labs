@@ -881,6 +881,96 @@ def plot_results(data: Measure, param, current_time: str = None, folder_path = N
 def plot_accuracy_results(acc_results, current_time: str = None, folder_path = None):
     
     plt.figure(figsize=(12,8))
+    for prob_imp in [p for p in acc_results['prob_improve_prey'].unique()]:
+        selected_df = acc_results[acc_results['prob_improve_prey'] == prob_imp]
+        plt.plot(selected_df['prob_improve_predator'], selected_df['mean_lf_predator']/365, marker='o', label=f'Improve probability prey = {prob_imp}')
+        plt.errorbar((selected_df['prob_improve_predator']), selected_df['mean_lf_predator']/365, 
+                    yerr=[selected_df['mean_lf_predator']/365 - selected_df['interval_lf_predator_low']/365,
+                        selected_df['interval_lf_predator_up']/365 - selected_df['mean_lf_predator']/365],
+                    fmt='o', capsize=5, c='black', zorder=0)
+    plt.xlabel('Predator probability of improvement')
+    plt.ylabel('Average life expectancy (years)')
+    plt.title('Average life expectancy (years) vs predator probability of improvement')
+    plt.grid(True)
+    plt.legend()
+    if folder_path:
+        file_name = os.path.join(folder_path, f'{current_time}_av_lf_predator.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+        
+    plt.figure(figsize=(12,8))
+    for prob_imp in [p for p in acc_results['prob_improve_prey'].unique()]:
+        selected_df = acc_results[acc_results['prob_improve_prey'] == prob_imp]
+        plt.plot(selected_df['prob_improve_predator'], selected_df['mean_l_predator'], marker='o', label=f'Improve probability prey = {prob_imp}')
+        plt.errorbar((selected_df['prob_improve_predator']), selected_df['mean_l_predator'], 
+                    yerr=[selected_df['mean_l_predator'] - selected_df['interval_l_predator_low'],
+                        selected_df['interval_l_predator_up'] - selected_df['mean_l_predator']],
+                    fmt='o', capsize=5, c='black', zorder=0)
+    plt.xlabel('Predator probability of improvement')
+    plt.ylabel('Average actual lifetime (days)')
+    plt.title('Average actual lifetime (days) vs predator probability of improvement')
+    plt.grid(True)
+    plt.legend()
+    if folder_path:
+        file_name = os.path.join(folder_path, f'{current_time}_av_l_predator.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+        
+    improvement_probabilities_prey = acc_results['prob_improve_prey']
+    life_expectancy_prey = acc_results['mean_lf_prey']/365  # Life expectancy of prey for each improvement probability
+
+    improvement_probabilities_predator = acc_results['prob_improve_predator']
+    life_expectancy_predator = acc_results['mean_lf_predator']/365 # Life expectancy of predator for each improvement probability
+
+    bar_width = 0.35
+    plt.figure(figsize=(18,8))
+    x = np.arange(len(improvement_probabilities_prey))
+    plt.bar(x - bar_width/2, life_expectancy_prey, width=bar_width, label='Rabbit')
+    plt.bar(x + bar_width/2, life_expectancy_predator, width=bar_width, label='Fox')
+    plt.xlabel('Improvement Probability')
+    plt.ylabel('Life Expectancy (years)')
+    plt.title('Effect of Improvement Probability on Life Expectancy')
+    x_labels = [f'{prey} / {predator}' for prey, predator in zip(improvement_probabilities_prey, improvement_probabilities_predator)]
+    plt.xticks(x, x_labels)
+    plt.legend()
+    plt.grid(True)
+    if folder_path:
+        file_name = os.path.join(folder_path, f'{current_time}_overal_lf.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+        
+    improvement_probabilities_prey = acc_results['prob_improve_prey']
+    life_expectancy_prey = acc_results['mean_l_prey']/365  # Life expectancy of prey for each improvement probability
+
+    improvement_probabilities_predator = acc_results['prob_improve_predator']
+    life_expectancy_predator = acc_results['mean_l_predator']/365 # Life expectancy of predator for each improvement probability
+
+    bar_width = 0.35
+    plt.figure(figsize=(18,8))
+    x = np.arange(len(improvement_probabilities_prey))
+    plt.bar(x - bar_width/2, life_expectancy_prey, width=bar_width, label='Rabbit')
+    plt.bar(x + bar_width/2, life_expectancy_predator, width=bar_width, label='Fox')
+    plt.xlabel('Improvement Probability')
+    plt.ylabel('Actual lifetime (years)')
+    plt.title('Effect of Improvement Probability on Actual lifetime')
+    x_labels = [f'{prey} / {predator}' for prey, predator in zip(improvement_probabilities_prey, improvement_probabilities_predator)]
+    plt.xticks(x, x_labels)
+    plt.legend()
+    plt.grid(True)
+    if folder_path:
+        file_name = os.path.join(folder_path, f'{current_time}_overal_l.')
+        plt.savefig(file_name, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+    
+    plt.figure(figsize=(12,8))
     plt.plot(acc_results['prob_improve_prey'], acc_results['mean_exctint_time_prey'], marker='o', label='Average exctint time')
     # plt.errorbar(selected_df['bias prob'], selected_df['consensus time mean'], 
     #             yerr=[selected_df['consensus time mean'] - selected_df['time interval low'],

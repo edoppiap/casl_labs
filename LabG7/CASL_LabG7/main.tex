@@ -99,63 +99,84 @@ Lab G7: Natural selection
         \item \textbf{Mobility model:} the main idea behind the mobility model is that each individual moves randomly around the world. The rate of movement is an input parameter. The world is modelled as a graph where each node corresponds to a land area. Each time a movement event occurs for an individual, it randomly chooses a neighbouring node and changes it's current location variable. The graph is modelled as a dictionary and it also stores all the living individuals in their positions. The mobility model will affect the mating events, in fact, every time a female in heat randomly changes location she starts looking for a male to reproduce with and every time a male randomly changes location he starts looking for a female in heat. The mobility model also affects the fighting model, because when a predator starts to hunt, it can engage with other individuals present in its land area. 
     \end{itemize}
 
+\subsection{Events}
+
+    \begin{itemize}
+        \item \textbf{Birth:} the birth event will add a newborn to the population and to the world. It takes as parameters the current\_time, the newborn reference, the move\_rate, the input limit population to calculate the sterile probability, and also the FES, the population and the world reference to update their states. At birth the firsts move event and in\_heat event are scheduled and if the newborn is a predator also the first fight and starve event. 
+        \item \textbf{Death:} the death event will remove an individual from the population and from the world.
+        \item \textbf{Start in heat:} the start in heat event will occur only for female and put the female in a reproductive state. In this event is first checked if the female is still alive, and if so it starts to look for male in the same position to have a mate event. Also a stop in heat event is scheduled.
+        \item \textbf{Stop in heat:} this event will end the reproductive state for a female if she didn't have a mate event in the meantime. The next start in heat event is scheduled.
+        \item \textbf{Move:} this event will cause a random move in the world for a specific individual. The move event will trigger mate events as described above
+        \item \textbf{Mate:} in this event a male look for a female that is in a reproductive state. If the mating has been successful, it generate a number of newborns as described above, a birth is scheduled and the female is put on pregnancy (this will mean that she can't have in-heat period in the mean time)
+        \item \textbf{Fight:} as described above, this event trigger the fight model
+        \item \textbf{Starve:} as described above.
+    \end{itemize}
+
+\subsection{Scenario and input parameters}
+
+    In this simulation two species as been taken into consideration. A long study as been taken in order to let them find the right condition to have a equilibrium state. For this reason a scenario where there are no natural selection is also shown in the results as baseline.
+    
+    \begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{media/0_11-02-2024_19-13-55-022905_pop_time_species}
+    \caption[short]{Simulation without natural selection}
+    \label{fig:no_sel}
+    \end{figure}
+
+    The predator species is a fox, with a initial life expectancy of 5 years, a reproduction rate of 4 times a year and an average number of newborns of 6 individuals. Its puberty will last the 15\% of the life expectancy, it can remain at least 21 days without food and goes hunt every 7 days on average. The starvation rate is set to every 31 days on average but not less than 21. The day between hunts is set to be 3 days and the pregnancy last for 40 days.
+
+    The prey species is a rabbit, with an initial life expectancy of 4 years, a reproduction rate of 5 times a year and an average number of newborns of 3 individuals. It puberty las the 15\% of the life expectancy ad its pregnancy last for 25 days. 
+
+    For both species the in heat period last for 7 days.
+
 \section{Results}
 
-    \subsection{Lifetime}
+    \subsection{Simulation without natural selection}
 
-        % \begin{figure}[!ht]
-        %     \centering
-        %     \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_1.5_p_i_0.8/lf.png}
-        %     \caption[short]{Lifetime evolution with high $p_i$ and low $\lambda$}
-        %     \label{fig:lf_grow}
-        % \end{figure}
+    As can be seen in Fig.\ref{fig:no_sel} the simulation is able to reach the stable equilibrium of its population. It can be seen how as the prey population grow follows a growth in the predator population and when it decrease after a while it decrease also the predator population.
 
-        % In terms of lifetime, we can see in Fig.  that it starts to decrease when the probability of improvement ($p_i$) is low, while in Fig. \ref{fig:lf_grow} it increases otherwise.
+    \subsection{Life expectancy predator}
 
-    \subsection{Average number of children per generation}
-        The average number of children is also an interesting measure, as it also depends on $p_i$.
-        %
-        % It can be seen in Fig.  that it starts to decrease with a low value of $p_i$, while it remain stable with a high value of $p_i$ (Fig. \ref{fig:av_grow}).
+    \begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{media/lf_predator.png}
+    \caption[short]{Life expectancy predator}
+    \label{fig:lf_predator}
+    \end{figure}
 
-        % \begin{figure}[!ht]
-        %     \centering
-        %     \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_0.5_p_i_0.2/av.png}
-        %     \caption[short]{Avg. number of children evolution with low $p_i$ and low $\lambda$}
-        %     \label{fig:av_low}
-        % \end{figure}
+    It can be seen in Fig.\ref{fig:lf_predator} there is a trend that shown how the life expectancy of the predator rely on the probability of improvement. The interesting fact is that  it rely also in the life expectancy of the prey. 
 
-        % \begin{figure}[!ht]
-        %     \centering
-        %     \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_1.5_p_i_0.8/av.png}
-        %     \caption[short]{Avg. number of children evolution with high $p_i$ and low $\lambda$}
-        %     \label{fig:av_grow}
-        % \end{figure}
+    % \begin{figure}[!ht]
+    % \centering
+    % \includegraphics[width=\columnwidth]{media/l_predator.png}
+    % \caption[short]{Actual lifetime predator}
+    % \label{fig:l_predator}
+    % \end{figure}
 
-    \subsection{Total number of children per generation}
+    \begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{media/exctinct_prob_predator.png}
+    \caption[short]{Exctinction probability predator}
+    \label{fig:ex_predator}
+    \end{figure}
 
-        % \begin{figure}[!ht]
-        %     \centering
-        %     \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_1.5_p_i_0.8/tot.png}
-        %     \caption[short]{Avg. number of children evolution with high $p_i$ and low $\lambda$}
-        %     \label{fig:tot_grow}
-        % \end{figure}
+    \subsection{All studied cases}
 
-        Another interesting measure is the total number of children per generation.
-        %
-        % In Fig. \ref{fig:tot_low} it can be seen that there is a generation that has given birth to the highest number of children, and this happen in the configuration with the low value of $p_i$.
+    \begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{media/overal_lf.png}
+    \caption[short]{Life expectancy for all the cases}
+    \label{fig:lf_all}
+    \end{figure}
 
-        % \begin{figure}[!ht]
-        %     \centering
-        %     \includegraphics[width=\columnwidth]{media/in_p_20_in_lt_2_a_0.01_l_0.5_p_i_0.2/tot.png}
-        %     \caption[short]{Avg. number of children evolution with low $p_i$ and low $\lambda$}
-        %     \label{fig:tot_low}
-        % \end{figure}
+    \begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{media/overal_l.png}
+    \caption[short]{Actual lifetime for all the cases}
+    \label{fig:l_all}
+    \end{figure}
 
-        % While Fig. \ref{fig:tot_grow} shows the configuration with an high value of $p_i$ and it can be observed that the total number of children it doesn't show any tendency over time. 
-    
-\section{Conclusion}
-
-In conclusion, the proposed approach seems to provide some information about the model it wants to simulate. This will serve as baseline for a future approach.
+    The case where the improvement probability is set to both 1 serve as the simulation without natural selection.
 
 %\bibliography{bibliography}
 %\bibliographystyle{ieeetr}
