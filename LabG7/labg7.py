@@ -78,32 +78,20 @@ from scipy.stats import t
 parser = argparse.ArgumentParser(description='Input parameters for the simulation')
 
 # Population parameters
-parser.add_argument('--prob_improve', '--p_i', type=float, default=[.8, .2, 1], nargs='+',
+parser.add_argument('--prob_improve', '--p_i', type=float, default=[.8, .5, .2, 1], nargs='+',
                     help='Probability of improvement of the lifetime')
 parser.add_argument('--init_population', '--p', type=int, default=[500], nargs='+',
                     help='Number of individuals for the 1st generation')
-parser.add_argument('--improve_factor', '--alpha', type=float, default=[.5, .5, 0], nargs='+',
+parser.add_argument('--improve_factor', '--alpha', type=float, default=[.5, .5, .5, 0], nargs='+',
                     help='Improve factor that an individual can develop at birth')
 parser.add_argument('--repr_rate', '--lambda', type=float, default=[.05], nargs='+',
                     help='Rate at which an individual reproduces')
-parser.add_argument('--max_population', type=int, default=1_500,
+parser.add_argument('--max_population', type=int, default=800,
                     help='This semplified version need a limit otherwise will infinite grow')
 parser.add_argument('--grid_dimentions', type=int, default=5,
                     help='Side of the square of the grid dimension')
-parser.add_argument('--av_num_child', type=int, default=3, 
-                    help='Number of new_born each individual have each birth')
-parser.add_argument('--in_head_period', type=int, default=15, 
-                    help='How many days the in-heat period last')
-parser.add_argument('--days_between_hunts', type=int, default=3,
-                    help='How many days a predator will not engage fight because has already eaten')
-parser.add_argument('--starve_rate', type=float, default=[1/21], nargs='+',
-                    help='Rate at which predators starve')
-parser.add_argument('--fight_rate', type=float, default=[.025], nargs='+',
-                    help='Rate at which the predator hunts for prey')
 parser.add_argument('--win_prob', type=float, default=.2,
                     help='Probability that a single predator has to have a successful hunt')
-parser.add_argument('--puberty_time', default=15, type=float,
-                    help='Number of days before an individual is able to reproduce')
 parser.add_argument('--percentages', default=.4, type=float,
                     help='Percentage of predators out of total')
 parser.add_argument('--initial_transient', default=30, type=int,
@@ -118,7 +106,7 @@ parser.add_argument('--pop_threshold', type=int, default=250,
                     help='Number of individual that change the repr_rate in a population')
 
 # Simulation parameters
-parser.add_argument('--sim_time', type=int, default= 12 * 365, # 12 years
+parser.add_argument('--sim_time', type=int, default= 25 * 365, # 12 years
                     help='Time to run the simulation')
 parser.add_argument('--calculate_accuracy', action='store_true', 
                     help='This will run a single simulation per combination without calculating the accuracy')
@@ -128,7 +116,7 @@ parser.add_argument('--confidence_level', type=float, default=.9,
                     help='Value of confidence we want for the accuracy calculation')
 parser.add_argument('--verbose', action='store_true',
                     help='To see the progress of the simulation')
-parser.add_argument('--seed', type=int, default=42, 
+parser.add_argument('--seed', type=int, default=100, 
                     help='For reproducibility reasons')
 parser.add_argument('--not_debug', action='store_true',
                     help='This will save the images into a directory')
@@ -140,36 +128,36 @@ parser.add_argument('--multiprocessing', action='store_true',
 #
 #
 SPECIES = {
-    'wolf': {
-        'name':'wolf',
-        'init_lifetime':356 * 15, # 15 years
+    'fox': {
+        'name':'fox',
+        'init_lifetime':356 * 5, # 15 years
         'improv_factor':.2,
         'prob_improve':.9,
-        'av_repr_rate': 3 / 365, # 2 time a year on average
+        'av_repr_rate': 4 / 365, # 4 times a year on average
         'av_num_child_per_birth': 6,
         'type':'predator',
-        'puberty_time': 6*30, # 6 months
+        'puberty_time': .15, # 6 months
         'possible_day_with_no_food': 21, # 3 weeks
-        'fight_rate': 1/8,
+        'fight_rate': 1/7,
         'starve_rate': 1/31,
-        'in_heat_period': 7, # 2 weeks
+        'in_heat_period': 7, # 1 week
         'pregnancy_duration': 40, 
         'days_between_hunts': 3,
         'attack_on_group': True
     },
-    'sheep': {
-        'name':'sheep',
-        'init_lifetime':356 * 10, # 10 years
+    'rabbit': {
+        'name':'rabbit',
+        'init_lifetime':356 * 4, # 10 years
         'improv_factor':.2,
         'prob_improve':.9,
-        'av_repr_rate': 4 / 365, # 4 time a year on average 
+        'av_repr_rate': 5 / 365, # 5 time a year on average 
         'av_num_child_per_birth': 3,
         'type':'prey',
-        'puberty_time': 6*30, # 6 months
+        'puberty_time': .15, # 6 months
         'possible_day_with_no_food': None,
         'fight_rate':None,
         'starve_rate': None,
-        'in_heat_period': 7, # 2 weeks
+        'in_heat_period': 7, # 1 week
         'pregnancy_duration':  25, 
         'days_between_hunts': None,
         'attack_on_group': None
@@ -186,16 +174,16 @@ class Measure:
         self.num_death = 0
         self.average_pop = 0
         self.time_last_event = 0
-        self.num_fight = 0
+        # self.num_fight = 0
         self.end_time = 0
-        self.starve_death = 0
-        self.mate_event = 0
+        # self.starve_death = 0
+        # self.mate_event = 0
+        self.species_exctinct_time = {}
         self.births_time = {'time':[], 'births':[]}
         self.time_size_pop = {}
         self.birth_per_species = {}
         self.death_per_species = {}
         self.birth_per_gen_per_species = {}
-        self.is_species_exctinct = {}
         self.in_heat_event = {}
         self.num_win = []
         self.wolf_death_time = None
@@ -205,12 +193,17 @@ class Measure:
     def increment_gen_birth(self, gen, species):
         if species['name'] not in self.birth_per_gen_per_species:
             self.birth_per_gen_per_species[species['name']] = {}
-        self.birth_per_gen_per_species[species['name']][gen]['n birth'] = self.birth_per_gen_per_species[species['name']].setdefault(gen,{'n birth':0, 'tot lf':0})['n birth'] + 1
+        self.birth_per_gen_per_species[species['name']][gen]['n birth'] = self.birth_per_gen_per_species[species['name']].setdefault(gen,{'n birth':0, 'tot lf':0, 'tot l':0})['n birth'] + 1
         
     def increment_gen_lf(self, gen, lf, species):
         if species['name'] not in self.birth_per_gen_per_species:
             self.birth_per_gen_per_species[species['name']] = {}
-        self.birth_per_gen_per_species[species['name']][gen]['tot lf'] = self.birth_per_gen_per_species[species['name']].setdefault(gen,{'n birth':0, 'tot lf':0})['tot lf'] + lf
+        self.birth_per_gen_per_species[species['name']][gen]['tot lf'] = self.birth_per_gen_per_species[species['name']].setdefault(gen,{'n birth':0, 'tot lf':0, 'tot l':0})['tot lf'] + lf
+        
+    def increment_gen_l(self, gen, l, species):
+        if species['name'] not in self.birth_per_gen_per_species:
+            self.birth_per_gen_per_species[species['name']] = {}
+        self.birth_per_gen_per_species[species['name']][gen]['tot l'] = self.birth_per_gen_per_species[species['name']].setdefault(gen,{'n birth':0, 'tot lf':0, 'tot l':0})['tot l'] + l
 
 #--------------------------------------------------------------------------------------------------------------------------------------------#
 # WORLD CLASS (LATTICE WITH SOME FUNCTIONS)
@@ -281,9 +274,8 @@ class Individual():
         self.sex = 'Y' if random.random() < .5 else 'X' # Y -> male - X -> Female
         self.gen = gen
         self.birth_time = birth_time
-        if self.gen != 0:
-            self.lifetime = random.uniform(father_lf, father_lf*(1+species['improv_factor']))\
-                if random.random() < species['prob_improve'] else random.uniform(0, father_lf)
+        if self.gen != 0 and random.random() < species['prob_improve']:
+            self.lifetime = random.uniform(father_lf, father_lf*(1+species['improv_factor']))
         else:
             self.lifetime = random.uniform(0, father_lf) # first individual can't improve
         
@@ -292,6 +284,7 @@ class Individual():
             self.current_position = (random.randint(0,world_dim-1),random.randint(0,world_dim-1))
         
         self.species = species
+        self.puberty_time = species['puberty_time'] * self.lifetime
         if species['type'] == 'predator':
             self.last_hunt_time = self.birth_time
         
@@ -333,6 +326,8 @@ def death(current_time, population: Population, individual: Individual, data: Me
         data.time_last_event = current_time
         data.num_death+=1
         data.death_per_species[individual.species['name']] = data.death_per_species.setdefault(individual.species['name'], 0) + 1
+        actual_lifetime = current_time - individual.birth_time
+        data.increment_gen_l(individual.gen, l=actual_lifetime, species=individual.species)
         population[individual.species['name']].remove(individual)
         world[individual.current_position]['individuals'].remove(individual)
 
@@ -345,7 +340,7 @@ def mate(current_time, current_ind: Individual, FES: PriorityQueue, data: Measur
     pos = world[current_ind.current_position] # position in which the male is located
     if len(pos['individuals']) > 2: # proceeds if there are at least other individuals in the same position
         # look for other individual of the same species
-        other_same_species = [ind for ind in pos['individuals'] if ind.species['name'] == current_ind.species['name'] and ind != current_ind] #and (not hasattr(ind, 'last_hunt_time') or current_time - ind.last_hunt_time < ind.species['possible_day_with_no_food'])]
+        other_same_species = [ind for ind in pos['individuals'] if ind.species['name'] == current_ind.species['name'] and ind != current_ind] 
         
         # if there are any, return because no reproduction is possible
         if len(other_same_species) == 0: 
@@ -357,7 +352,7 @@ def mate(current_time, current_ind: Individual, FES: PriorityQueue, data: Measur
         # for female in females_in_heat: # this will mean that a male will reproduce with all the female in the same position currently in heat
         
         if len(females_in_heat) > 0:
-            data.mate_event += 1
+            # data.mate_event += 1
             female = random.choice(females_in_heat) # the male choose a single female to reproduce with
             av_lifetime = (female.lifetime + current_ind.lifetime) / 2 # calculate the average lifetime to pass at the new_born
             female.pregnant = True # store that the female can't enter in new heat period while is pregnant
@@ -386,7 +381,7 @@ def fight(current_time, population: Population, individual: Individual, FES: Pri
         
         try:
             # winning probability depends on the number of predators individual in the whole population (this will prevent to have overkill predators)
-            win_prob = min(1, init_win_prob / (len(population[individual.species['name']]) / (len(population['sheep'])/2.3))) 
+            win_prob = min(1, init_win_prob / (len(population[individual.species['name']]) / (len(population['rabbit'])/2.3))) 
         except ZeroDivisionError:
             return
         
@@ -396,13 +391,12 @@ def fight(current_time, population: Population, individual: Individual, FES: Pri
                             and ind != individual # but not the current individual
                             and current_time - ind.last_hunt_time >= ind.species['days_between_hunts']] # not all predator are interested in eating a new prey
             # select all preys
-            hide_prob = min(1, .2 * (len(population['sheep']) / len(population['wolf'])/2)) 
+            hide_prob = min(1, .2 * (len(population['rabbit']) / len(population['fox'])/2)) 
             preys = [ind for ind in pos['individuals'] if ind.species['type'] == 'prey' and
                      random.random() < hide_prob] # % of the preys is able to successfully hide from the predator
             
             if len(preys) > 0: # otherwise there is no change to have a fight TODO: models if two individuals of the same species can fight eachother
             
-                data.num_fight += 1
                 # each predator wants to hunt a prey
                 # (it can be also model that more than one predator hunt the same prey,
                 #  the winning prob should be higher in that case)
@@ -484,17 +478,19 @@ def fight(current_time, population: Population, individual: Individual, FES: Pri
 #
 #      
 def starve(current_time, population: Population, individual: Individual, FES: PriorityQueue, data: Measure, world: World):
+    
+    days_without_food = current_time - individual.last_hunt_time
+    
     # check if the individual has eaten in the past days
     if individual in population[individual.species['name']] \
         and individual.species['type'] == 'predator' \
-        and current_time - individual.last_hunt_time > individual.species['possible_day_with_no_food']: # check if the individual hasn't eaten yet
+        and days_without_food > individual.species['possible_day_with_no_food']: # check if the individual hasn't eaten yet
             
             # to prevent predator to go exctinct to quicly when there are lack of prey
-            starve_prob = min(1, max(0.2, (len(population['wolf']) / len(population['sheep']))))
+            starve_prob = min(1, max(0.2, (len(population['fox']) / len(population['rabbit']))))
             
             if random.random() < starve_prob:
                 FES.put(Event(current_time, 'death', individual))
-                data.starve_death += 1
             else:
                 starve_time = 0
                 while starve_time < individual.species['possible_day_with_no_food']: 
@@ -523,7 +519,7 @@ def move(current_time, population: Population, individual: Individual, move_rate
             in_heat_females = [ind for ind in world[individual.current_position]['individuals'] 
                  if ind.species['name'] == individual.species['name'] and
                  ind.sex == 'X' and
-                 (ind.gen == 0 or current_time - ind.birth_time > ind.species['puberty_time']) and
+                 (ind.gen == 0 or current_time - ind.birth_time > ind.puberty_time) and
                  ind.in_heat]
             if len(in_heat_females) > 0: # if there are any female in heat
                 FES.put(Event(current_time, 'mate', individual))
@@ -531,7 +527,7 @@ def move(current_time, population: Population, individual: Individual, move_rate
             males = [ind for ind in world[individual.current_position]['individuals'] 
                  if ind.species['name'] == individual.species['name'] and
                  ind.sex == 'Y' and
-                 (ind.gen == 0 or current_time - ind.birth_time > ind.species['puberty_time']) and
+                 (ind.gen == 0 or current_time - ind.birth_time > ind.puberty_time) and
                  not ind.sterile]
             if len(males) > 0: # if there are any reproductive male
                 FES.put(Event(current_time, 'mate', random.choice(males)))            
@@ -557,7 +553,6 @@ def birth(current_time, new_born: Individual, FES: PriorityQueue, population: Po
         if current_time > 0:
             data.birth_per_species[specie] = data.birth_per_species.setdefault(specie, 0) + 1
             data.num_birth += 1
-            data.births_time['time']
         
         if isinstance(new_born.mother, Individual):
             new_born.current_position = new_born.mother.current_position
@@ -591,7 +586,7 @@ def birth(current_time, new_born: Individual, FES: PriorityQueue, population: Po
             # schedule the first heat event relative if it's a female
             if new_born.sex == 'X':
                 if new_born.gen != 0:
-                    heat_time = current_time + new_born.species['puberty_time'] + random.expovariate(new_born.species['av_repr_rate'])
+                    heat_time = current_time + new_born.puberty_time + random.expovariate(new_born.species['av_repr_rate'])
                 else:
                     heat_time = current_time + random.expovariate(new_born.species['av_repr_rate'])
                 FES.put(Event(heat_time, 'start_heat', new_born))
@@ -632,7 +627,7 @@ def start_in_heat(current_time, individual: Individual, population: Population, 
         males = [ind for ind in world[individual.current_position]['individuals'] 
                  if ind.species['name'] == individual.species['name'] and
                  ind.sex == 'Y' and
-                 (ind.gen == 0 or current_time - ind.birth_time > ind.species['puberty_time']) and
+                 (ind.gen == 0 or current_time - ind.birth_time > ind.puberty_time) and
                  not ind.sterile]
         if len(males) > 1:
             FES.put(Event(current_time, 'mate', random.choice(males)))
@@ -659,7 +654,8 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
     population = Population(init_p=init_p, world_dim=world_dim, species=species, percentages=percent, FES=FES, init_transient=args.initial_transient)
     world = World(world_dim, population)
     
-    c=0
+    for s in species:
+        data.species_exctinct_time[s] = None
     
     #----------------------------------------------------------------#
     # EVENT LOOP
@@ -673,13 +669,9 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
         if args.verbose:
             if t > 0:
                 
-                print(f'{len(population["wolf"]) = } - {len(population["sheep"]) = } - time = {t:.2f} (days)' + ' '*5, end='\r')
+                print(f'{len(population["fox"]) = } - {len(population["rabbit"]) = } - time = {t:.2f} (days)' + ' '*5, end='\r')
             else:
                 print(f'Initializing the population...' + ' '*20, end='\r')
-        
-        c += 1
-        if t>0 and event.individual.species['type'] == 'predator' and event.type != 'move':
-            data.stringa += f'Event {c} time = {t} type = {event.type} \n'
         
         if event.type == 'birth':
             birth(current_time=t,
@@ -739,33 +731,32 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
                    world=world)
         
         # STORE THE LEN OF THE POPULATION PER SPECIES
-        if t > 0:
+        if t > 0 :
+            # previous_day = int(t)
             data.time_size_pop.setdefault('time',[]).append(t)
             for specie in population.keys():
                 data.time_size_pop.setdefault(specie,[]).append(len(population[specie]))
                 
-        for name in population:
-            if len(population[name]) == 0:
-                data.is_species_exctinct[name] = t
+        if t > args.initial_transient:
+            for name in population:
+                if len(population[name]) == 0:
+                    data.species_exctinct_time[name] = t
         
-        if len(population) == 0  or t > args.sim_time:
-            break
+        if len(population) == 0  or t > args.sim_time or len(population) > args.max_population * 2:
+            break       
         
-        if t > args.initial_transient and len(population['wolf']) == 0:
-            break        
-        
-        # if len(population['wolf']) == 0 and data.wolf_death_time is None:
+        # if len(population['fox']) == 0 and data.wolf_death_time is None:
         #     data.wolf_death_time = t
         #     break
     
     
-        # if len(population['wolf']) == 0 and data.wolf_death_time is None:
+        # if len(population['fox']) == 0 and data.wolf_death_time is None:
         #     data.wolf_death_time = t
         #     break
     
     if args.verbose:
         print(f'{len(population) = }')
-        print(f'{len(population["wolf"]) = }\n{len(population["sheep"]) = }')
+        print(f'{len(population["fox"]) = }\n{len(population["rabbit"]) = }')
         for name in population:
             print(f'{name} birth events: {data.birth_per_species.setdefault(name, 0)}')
         print(f'Num wolf win: {sum(predator_win for predator_win, _ in data.num_win)}')
@@ -779,9 +770,8 @@ def simulate(init_p, percent, move_rate, world_dim, species, data: Measure, args
 #
 #
 def plot_results(data: Measure, param, current_time: str = None, folder_path = None, end_time = None, idx=None):
-    init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, repr_rate_prey, \
-        repr_rate_predator, starve_rate, fight_rate, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
-        days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, _ = param
+    init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, \
+    percent, move_rate, world_dim, args, _ = param
             
     time_size_pop = data.time_size_pop
     
@@ -797,13 +787,13 @@ def plot_results(data: Measure, param, current_time: str = None, folder_path = N
 
     output_str += '\n--------------------------------------------\n\n'
     
-    output_str += f'Input parameters: \n__{init_p = },\n__{prob_improve_prey = },\n__{impr_factor_prey = },\n__{prob_improve_predator = },\n' \
-                + f'__{impr_factor_predator = }\n__repr_rate_prey = {repr_rate_prey*365} in_heat/year,\n__repr_rate_predator = {repr_rate_predator * 365} in_heat/year,\n'\
-                + f'__{starve_rate = }\n__{fight_rate = }\n'\
-                + f'__{num_child_predator = },\n__{num_child_prey = }\n__{heat_period_predator = },\n__{heat_period_prey = },\n__{days_between_hunts = },\n' \
-                + f'__{puberty_time_predator = },\n__{percent = },\n__{puberty_time_prey = },\n__move_rate = {move_rate * 365} move/year\n__{world_dim = }\n' \
-                + f'__{args.decrease_factor = },\n__{args.increase_factor = }\n__{args.pop_threshold = }\n' \
-                + '--------------------------------------------\n\n'
+    # output_str += f'Input parameters: \n__{init_p = },\n__{prob_improve_prey = },\n__{impr_factor_prey = },\n__{prob_improve_predator = },\n' \
+    #             + f'__{impr_factor_predator = }\n__repr_rate_prey = {repr_rate_prey*365} in_heat/year,\n__repr_rate_predator = {repr_rate_predator * 365} in_heat/year,\n'\
+    #             + f'__{starve_rate = }\n__{fight_rate = }\n'\
+    #             + f'__{num_child_predator = },\n__{num_child_prey = }\n__{heat_period_predator = },\n__{heat_period_prey = },\n__{days_between_hunts = },\n' \
+    #             + f'__{puberty_time_predator = },\n__{percent = },\n__{puberty_time_prey = },\n__move_rate = {move_rate * 365} move/year\n__{world_dim = }\n' \
+    #             + f'__{args.decrease_factor = },\n__{args.increase_factor = }\n__{args.pop_threshold = }\n' \
+    #             + '--------------------------------------------\n\n'
     output_str += f'Output measures:\n'
     output_str += f'__Wolf predation rate = {sum(i for i,_ in data.num_win) / (data.end_time - args.initial_transient)} hunts/day\n'
     for species in data.birth_per_species:
@@ -813,7 +803,6 @@ def plot_results(data: Measure, param, current_time: str = None, folder_path = N
             output_str += f'__{species.capitalize()} have a new_death with a rate of {data.death_per_species[species] / data.end_time} deaths/day\n' \
                     + f'__{species.capitalize()} total deaths events: {data.death_per_species[species]}\n' \
                     + '--------------------------------------------\n'
-    output_str += f'Num fight = {data.num_fight}\nTotal birth = {data.num_birth}\nEnd time = {data.end_time / 365:.2f} (years)\nStarve deaths = {data.starve_death}\nMate events = {data.mate_event}\n'
     for name in data.in_heat_event:
         output_str += f'{name.capitalize()} in_heat_event = {data.in_heat_event[name]}\n'
     # for name in data.repr_rate:
@@ -833,8 +822,8 @@ def plot_results(data: Measure, param, current_time: str = None, folder_path = N
 
     if time_size_pop is not None:
         plt.figure(figsize=(12,8))
-        plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["wolf"],label='Wolf')
-        plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["sheep"],label='Sheep')
+        plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["fox"],label='fox')
+        plt.plot([t/365 for t in time_size_pop['time']],time_size_pop["rabbit"],label='rabbit')
         if args.initial_transient != 0:
             plt.axvline(x=args.initial_transient/365, ls='--', color='g', label='End initial transient')
         plt.xlabel('Time (years)')
@@ -930,31 +919,19 @@ def create_folder_path():
     return folder_path
 
 def simulate_wrapper(param):
-    init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, repr_rate_prey, \
-        repr_rate_predator, starve_rate, fight_rate, num_child_predator, num_child_prey, heat_period_predator, heat_period_prey, \
-        days_between_hunts, puberty_time_predator, puberty_time_prey, percent, move_rate, world_dim, args, _, seed = param
+    init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, \
+        percent, move_rate, world_dim, args, _, seed = param
     print(f'Simualte with {prob_improve_prey = }, {prob_improve_predator = }, {seed = }')
     
     species = copy.deepcopy(SPECIES)
     random.seed(seed)
     np.random.seed(seed)
     
-    # species['wolf']['av_repr_rate'] = repr_rate_predator
-    species['wolf']['improv_factor'] = impr_factor_predator
-    species['wolf']['prob_improve'] = prob_improve_predator
-    # species['wolf']['av_num_child_per_birth'] = num_child_predator
-    # species['wolf']['in_heat_period'] = heat_period_predator
-    # species['wolf']['days_between_hunts'] = days_between_hunts
-    # species['wolf']['puberty_time_predator'] = puberty_time_predator
-    # species['wolf']['starve_rate'] = starve_rate
-    # species['wolf']['fight_rate'] = fight_rate
+    species['fox']['improv_factor'] = impr_factor_predator
+    species['fox']['prob_improve'] = prob_improve_predator
     
-    # species['sheep']['av_repr_rate'] = repr_rate_prey
-    species['sheep']['improv_factor'] = impr_factor_prey
-    species['sheep']['prob_improve'] = prob_improve_prey
-    # species['sheep']['av_num_child_per_birth'] = num_child_prey
-    # species['sheep']['in_heat_period'] = heat_period_prey
-    # species['sheep']['puberty_time'] = puberty_time_prey
+    species['rabbit']['improv_factor'] = impr_factor_prey
+    species['rabbit']['prob_improve'] = prob_improve_prey
     
     data = Measure()
     simulate(init_p=init_p, 
@@ -990,46 +967,69 @@ def calculate_confidence_interval(data: list, conf):
     return mean,interval,acc
 
 def intervals_wrapper(param:tuple, tot_results: list, conf, acc_threshold):
-    mean_time,interval_time,acc_time = calculate_confidence_interval([data.end_time for data in tot_results],conf)
-    mean_exctint_time_prey,interval_exctint_time_prey, acc_exctint_time_prey = calculate_confidence_interval([data.is_species_exctinct.setdefault('sheep', None) for data in tot_results],conf)
-    mean_exctint_time_predator,interval_exctint_time_predator, acc_exctint_time_predator = calculate_confidence_interval([data.is_species_exctinct.setdefault('wolf', None) for data in tot_results],conf)
-    av_lf_prey = [value['tot lf'] / value['n birth'] for data in tot_results for key,value in data.birth_per_gen_per_species['sheep'].items() if key > 0]
-    mean_lf_prob_prey,interval_lf_prob_prey,acc_lf_prob_prey = calculate_confidence_interval(av_lf_prey,conf)
-    av_lf_predator = [value['tot lf'] / value['n birth'] for data in tot_results for key,value in data.birth_per_gen_per_species['wolf'].items() if key > 0]
-    mean_lf_prob_predator,interval_lf_prob_predator,acc_lf_prob_predator = calculate_confidence_interval(av_lf_predator,conf)
+    # mean_time,interval_time,acc_time = calculate_confidence_interval([data.end_time for data in tot_results],conf)
+    acc_exctint_time_prey, acc_exctint_time_predator = 0,0
+    mean_exctint_time_prey,interval_exctint_time_prey = None,None
+    prey_extinction_times = [data.species_exctinct_time['rabbit'] for data in tot_results if data.species_exctinct_time['rabbit']]
+    if len(prey_extinction_times) > 1:
+        mean_exctint_time_prey,interval_exctint_time_prey, acc_exctint_time_prey = calculate_confidence_interval(prey_extinction_times,conf)
     
-    # acc_result['exctinct_prob_predator'] = sum(int(data.is_species_exctinct['wolf']) for data in tot_results) / len(tot_results)
-    # acc_result['exctinct_prob_prey'] = sum(int(data.is_species_exctinct['sheep']) for data in tot_results) / len(tot_results)
+    predator_extinction_times = [data.species_exctinct_time['fox'] for data in tot_results if data.species_exctinct_time['fox']]
+    mean_exctint_time_predator,interval_exctint_time_predator = None,None
+    if len(predator_extinction_times) > 1:
+        mean_exctint_time_predator,interval_exctint_time_predator, acc_exctint_time_predator = calculate_confidence_interval(predator_extinction_times,conf)
+    
+    av_lf_prey = [value['tot lf'] / value['n birth'] for data in tot_results for key,value in data.birth_per_gen_per_species['rabbit'].items() if key > 0]
+    mean_lf_prey,interval_lf_prey,acc_lf_prey = calculate_confidence_interval(av_lf_prey,conf)
+    av_lf_predator = [value['tot lf'] / value['n birth'] for data in tot_results for key,value in data.birth_per_gen_per_species['fox'].items() if key > 0]
+    mean_lf_predator,interval_lf_predator,acc_lf_predator = calculate_confidence_interval(av_lf_predator,conf)
+    
+    av_l_prey = [value['tot l'] / value['n birth'] for data in tot_results for key,value in data.birth_per_gen_per_species['rabbit'].items() if key > 0]
+    mean_l_prey,interval_l_prey,acc_l_prey = calculate_confidence_interval(av_l_prey,conf)
+    
+    av_l_predator = [value['tot l'] / value['n birth'] for data in tot_results for key,value in data.birth_per_gen_per_species['fox'].items() if key > 0]
+    mean_l_predator,interval_l_predator,acc_l_predator = calculate_confidence_interval(av_l_predator,conf)
+    
+    print(f'{acc_lf_prey = } - {acc_lf_predator = }')
+    print(f'{acc_l_prey = } - {acc_l_predator = }')
+    print(f'{acc_exctint_time_prey = } - {acc_exctint_time_predator = } - {len(tot_results) = }')
     
     results = None
-    if acc_time > acc_threshold and acc_lf_prob_prey > acc_threshold and acc_lf_prob_predator > acc_threshold:
+    if acc_lf_prey > acc_threshold and acc_lf_predator > acc_threshold and \
+        acc_l_prey > acc_threshold and acc_l_predator > acc_threshold and \
+        (acc_exctint_time_prey > acc_threshold or acc_exctint_time_predator > acc_threshold or len(tot_results) > 100):
         results = {
             'prob_improve_prey':param[1],
             'impr_factor_prey':param[2],
             'prob_improve_predator':param[3],
             'impr_factor_predator':param[4],
-            'mean_time' : mean_time,
-            'interval_time_low': interval_time[0],
-            'interval_time_up': interval_time[1],
-            'acc_time':acc_time,
             'mean_exctint_time_prey':mean_exctint_time_prey,
-            'interval_exctint_time_prey_low':interval_exctint_time_prey[0],
-            'interval_exctint_time_prey_up':interval_exctint_time_prey[1],
+            'interval_exctint_time_prey_low':interval_exctint_time_prey[0] if interval_exctint_time_prey else None,
+            'interval_exctint_time_prey_up':interval_exctint_time_prey[1] if interval_exctint_time_prey else None,
             'acc_exctint_time_prey':acc_exctint_time_prey,
-            'exctinct_prob_prey': sum(1 for data in tot_results if data.is_species_exctinct.setdefault('sheep', None) is not None) / len(tot_results),
+            'exctinct_prob_prey': sum(1 for data in tot_results if data.species_exctinct_time['rabbit'] is not None) / len(tot_results), # if it's none then it not exctinct
             'mean_exctint_time_predator':mean_exctint_time_predator,
-            'interval_exctint_time_predator_low':interval_exctint_time_predator[0],
-            'interval_exctint_time_predator_up':interval_exctint_time_predator[1],
+            'interval_exctint_time_predator_low':interval_exctint_time_predator[0] if interval_exctint_time_predator else None,
+            'interval_exctint_time_predator_up':interval_exctint_time_predator[1] if interval_exctint_time_predator else None,
             'acc_exctint_time_predator':acc_exctint_time_predator,
-            'exctinct_prob_prdator': sum(1 for data in tot_results if data.is_species_exctinct.setdefault('wolf', None) is not None) / len(tot_results),
-            'mean_lf_prob_prey': mean_lf_prob_prey,
-            'interval_lf_prob_prey_low':interval_lf_prob_prey[0],
-            'interval_lf_prob_prey_up':interval_lf_prob_prey[1],
-            'acc_lf_prob_prey':acc_lf_prob_prey,
-            'mean_lf_prob_predator':mean_lf_prob_predator,
-            'interval_lf_prob_predator_low':interval_lf_prob_predator[0],
-            'interval_lf_prob_predator_up':interval_lf_prob_predator[1],
-            'acc_lf_prob_predator':acc_lf_prob_predator
+            'exctinct_prob_prdator': sum(1 for data in tot_results if data.species_exctinct_time['fox'] is not None) / len(tot_results),
+            'mean_lf_prey': mean_lf_prey,
+            'interval_lf_prey_low':interval_lf_prey[0],
+            'interval_lf_prey_up':interval_lf_prey[1],
+            'acc_lf_prey':acc_lf_prey,
+            'mean_l_prey': mean_l_prey,
+            'interval_l_prey_low':interval_l_prey[0],
+            'interval_l_prey_up':interval_l_prey[1],
+            'acc_lf_predator':acc_lf_predator,
+            'mean_lf_predator':mean_lf_predator,
+            'interval_lf_predator_low':interval_lf_predator[0],
+            'interval_lf_predator_up':interval_lf_predator[1],
+            'acc_lf_predator':acc_lf_predator,
+            'acc_l_predator':acc_l_predator,
+            'mean_l_predator':mean_l_predator,
+            'interval_l_predator_low':interval_l_predator[0],
+            'interval_l_predator_up':interval_l_predator[1],
+            'acc_l_predator':acc_l_predator
         }
     return results
 
@@ -1050,19 +1050,13 @@ if __name__ == '__main__':
     
     random.seed(args.seed)
     
-    
     start_time = datetime.now()
     
     params = [(init_p, prob_improve_prey, impr_factor_prey, prob_improve_predator, impr_factor_predator, 
-               repr_rate_prey, repr_rate_predator, starve_rate, fight_rate, args.av_num_child, args.av_num_child, args.in_head_period, args.in_head_period,
-               args.days_between_hunts, args.puberty_time, args.puberty_time, (args.percentages,1-args.percentages), move_rate, args.grid_dimentions, args, folder_path) 
+               (args.percentages,1-args.percentages), move_rate, args.grid_dimentions, args, folder_path) 
                     for init_p in args.init_population
                     for prob_improve_prey,impr_factor_prey in zip(args.prob_improve,args.improve_factor)
                     for prob_improve_predator,impr_factor_predator in zip(args.prob_improve,args.improve_factor)
-                    for repr_rate_prey in args.repr_rate
-                    for repr_rate_predator in args.repr_rate
-                    for starve_rate in args.starve_rate
-                    for fight_rate in args.fight_rate
                     for move_rate in args.move_rate if (prob_improve_predator == 1 and prob_improve_prey == 1) or (prob_improve_predator != 1 and prob_improve_prey != 1)]
     
     acc_results = []
@@ -1077,8 +1071,8 @@ if __name__ == '__main__':
         
         for i,param in enumerate(params):
             acc_result = None
+            tot_results = []
             while acc_result is None:
-                tot_results = []
                 seeds = [random.randint(0, 100_000) for _ in range(num_processes)]
                 with multiprocessing.Pool(processes=num_processes) as p:
                     param_seed = [tuple(param + (seed,)) for seed in seeds]        
@@ -1088,7 +1082,7 @@ if __name__ == '__main__':
                 acc_result = intervals_wrapper(param, tot_results, args.confidence_level, args.accuracy_threshold)
             if args.calculate_accuracy:
                 acc_results.append(pd.DataFrame([acc_result]))
-                plot_results(random.choice(tot_results), param, current_time, folder_path, idx=i)
+                # plot_results(random.choice(tot_results), param, current_time, folder_path, idx=i)
             else:
                 for j,data in enumerate(tot_results):
                     plot_results(data, param, current_time, folder_path, idx=i+j)
@@ -1106,7 +1100,7 @@ if __name__ == '__main__':
                 tot_results = []
                 acc_result = None
                 while acc_result is None:
-                    simulation_results = simulate_wrapper(param + (args.seed,))
+                    simulation_results = simulate_wrapper(param + (random.randint(0, 100_000),))
                     
                     if i % 6 == 0:
                         tot_results.append(simulation_results)
@@ -1114,7 +1108,7 @@ if __name__ == '__main__':
                 acc_results.append(pd.DataFrame([acc_result]))
                 plot_results(random.choice(tot_results), param, current_time, folder_path, idx=i)
             else:
-                simulation_results = simulate_wrapper(param + (args.seed,))
+                simulation_results = simulate_wrapper(param + (random.randint(0, 100_000),))
                 plot_results(simulation_results, param, current_time, folder_path, idx=i)
     
     if args.calculate_accuracy:
