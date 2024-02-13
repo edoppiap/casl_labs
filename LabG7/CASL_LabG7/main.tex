@@ -32,13 +32,10 @@ Lab G7: Natural selection
 }
 
 \maketitle
-\begin{abstract}
-    Natural selection is a key mechanism in evolution, whereby a population evolves due to environmental factors that favour some random mutations over others.
-    %
-    This paper presents a first approach to simulating such a process over a simplified population. 
-    %
-    Some assumptions have been made, such as the choice of model and the type of inheritance that the sons will have. 
-\end{abstract}
+% \begin{abstract}
+    
+    
+% \end{abstract}
 
 \section{Problem overview}
 
@@ -50,6 +47,12 @@ Lab G7: Natural selection
     %
     Some individuals can develop resistance to one or more of these factors, improving their ability to survive and reproduce, and pass this resistance on to new generations. 
 
+    One of the key elements of natural selection is survival against predators. Many species develop a symbiotic relationship known as `\textit{prey-predator}`. 
+    %
+    There are predators that evolve for the purpose of being more effective at preying on a particular species, and that species, the prey, is then selected to evolve caratteristic that will allow it to better survive the predator attacks.
+
+    This report analyses how natural selection can affect this relationship between two species, and in particular which parameters have more influence on life expectancy and the actual lifespan of individuals. 
+
     %1. Introduci una capacità di carico: In natura, l'ambiente ha una capacità di carico massima, che è il numero massimo di individui che l'ambiente può sostenere. Quando la popolazione raggiunge la capacità di carico, la crescita della popolazione rallenta o si ferma. Potresti introdurre un concetto simile nella tua simulazione. Ad esempio, potresti fare in modo che il tasso di riproduzione diminuisca quando la popolazione è vicina alla capacità di carico.
 
     % 2. Variazione del tasso di riproduzione: Attualmente, tutti gli individui nella tua simulazione hanno lo stesso tasso di riproduzione. In natura, tuttavia, il tasso di riproduzione può variare tra gli individui. Potresti introdurre una certa variazione nel tasso di riproduzione nella tua simulazione. Ad esempio, potresti fare in modo che il tasso di riproduzione di un individuo sia una funzione del suo "lifetime".
@@ -60,9 +63,9 @@ Lab G7: Natural selection
 
 \section{Proposed approach}
 
-    Simulating such a complex process can be a challenging task. For this reason, some assumptions have been made:
+\subsection{Assumptions}
 
-    \subsection{Assumptions}
+    Simulating such a complex process can be a challenging task. For this reason, some assumptions have been made:
 
     % \begin{figure}[!b]
     %     \centering
@@ -74,12 +77,26 @@ Lab G7: Natural selection
     \begin{itemize}
         \item \textbf{Reproduction:} in nature there are many different forms of reproduction. Most require two individuals of the same species.
         %
-        In this simplified version, only asexual reproduction is considered, a form of reproduction that requires a single individual.
+        In this study, the species considered are mammals, so the type of reproduction modelled is \textit{sexual reproduction}.  
         %
-        This means that each individual can give birth to
-        \item \textbf{Reproduction rate ($\lambda$):} each individual will reproduce with a specified rate of reproduction. In this simplified version, is considered that al the individuals will share the same reproduction rate ($\lambda$) and that this rate is always the same no matter the age of the individual.
-        \item \textbf{Reproduction process:} it is assumed that this process follows a Poisson process. In fact, each birth event can be considered as independent and occurring with a given frequency in time. The reproduction process of the whole population can be considered as following a Poisson distribution with a given $\lambda_{tot} = \sum_{0}^{i}\lambda_i$ where $i=$individual. This assumption with the previous one means that the process of the whole population follows a Poisson distribution with $\lambda_{tot} = \lambda \cdot {n}_{pop}$ where ${n}_{pop}=$ size of the population. 
-        \item \textbf{Improvement over generation:} this is the process that models how resistance has been passed on to new generations. Each newborn receives a life expectancy from its parents, which is used to generate its lifetime variable. There is a possibility that this lifetime will be greater than the lifetime of the parent ($p_i$). In this case, the lifetime is randomly generated from a uniform distribution between the lifetime of the parent and the lifetime of the parent multiplied by a factor ($1+\alpha$). Otherwise it is generated from a uniform distribution between 0 and the lifetime of the parent.
+        In order to have a \textit{birth event}, a female must mate with a male of the same species, and a mating event can only occur if the two individuals are in the same place at the time when the female is in heat. 
+        \item \textbf{Reproduction rate ($\lambda$):} The reproductive rate is considered to be the rate at which a female will have periods of being in heat ($\lambda$). The time between heat periods was generated by an exponential distribution, assuming that the total heat process of a female follows a Poisson distribution.
+        \item \textbf{Puberty time:} each individual cannot participate in mating events until they reach puberty. This element adds a level of realism and prevents the population from becoming incrontrollably overgrown.
+        \item \textbf{Number of new born:} each female can give birth to more than one individual per birth event. Each individual has its own life expectancy variable and the number of newborns is generated from a Poisson distribution, knowing the average number of children for each species.
+        \item \textbf{Pregnancy:} for a new birth event to occur, a period of time is considered between the mating event and the actual birth event. This period represents the gestation period. The actual birth event will only occur if the female survives to the scheduled birth event. 
+        \item \textbf{Sterility probability:} at birth time, is generated a probability that the newborn will be sterile. This will act as upper bound for the number of individuals for a given species in a realistic way. This probability depends on the number of individual in the moment of the birth event and on an input parameters.
+        \item \textbf{Improvement over generation:} this is the process that models how resistance has been passed on to new generations. Each newborn receives a life expectancy from its parents, which is used to generate its lifetime variable. The life expectancy of the new born is the average life expectancy of the two parents. There is a possibility that this life expectancy will be greater than the average life expectancy of the parents ($p_i$). In this case, it is randomly generated from a uniform distribution between the average life expectancy of the parents and the average life expectancy of the parentst multiplied by a factor ($1+\alpha$). Otherwise it is generated from a uniform distribution between 0 and the average life expectancy of the parents.
+    \end{itemize}
+
+\subsection{Models}
+
+    The simulation takes into account various factors to create a realistic scenario and there are three main models that have been developed:
+
+    \begin{itemize}
+        \item \textbf{Fight model:} fight events represent the hunting of predators. The hunt is modelled as a group hunt: each time a predator wants to hunt a prey, it first searches for other individuals of its species. A winning probability is generated and given to each individual taking part in the hunt, so the more predators are in the group, the more chances they have to win the fight. The maximum number of predators in a group is 3. Not all predators are interested in taking part in the fight, some of them may have eaten recently. The winning probability generated before each fight depends on the ratio between the number of predators and prey in the entire population. This represents the hunting pressure that the predators exert on the prey population: the lower the pressure, the higher the chance of finding prey that are not ready to fight, and therefore the higher the probability of winning. The higher the pressure, the higher the change that the prey will be alert and the predator will compete higher, so the lower the probability of winning. At every hunt, the predator will chose the youngest individual to fight.
+        \item \textbf{Survival model prey:} as discussed above, the prey will survive based on the winning probability given to each predator for the fight model, but another consideration is also taken into account: there is a probability that a prey can hide from the predators before the fight even happens. In fact, when the predators are looking for prey, only those prey that are not hiding are available for the fight. The probability of hiding depends again on the ratio of predators to prey, this will act as a response of the prey in case of high hunting pressure exerted by the predators. This almost always prevents the complete extinction of the prey population, as the probability is very high when the number of prey is low. 
+        \item \textbf{Survival model predator:} Survival model: The predator must eat often or it will starve. Starvation events are generated to keep a predator alive for a while to allow it to hunt, if the predator doesn't eat in that time the starvation event will cause a death event. There is a common problem in predator-prey simulations that causes the predator population to go extinct when the prey population reaches a minimum. To prevent this from happening too often, the death event is triggered with a certain probability, which again depends on the ratio between the number of predators and prey in the whole population. This will represent the possibility that a predator has eaten something else in response to the scarcity of prey. In the majority of cases, this will prevent the premature termination of the predator population.
+        \item \textbf{Mobility model:} the main idea behind the mobility model is that each individual moves randomly around the world. The rate of movement is an input parameter. The world is modelled as a graph where each node corresponds to a land area. Each time a movement event occurs for an individual, it randomly chooses a neighbouring node and changes it's current location variable. The graph is modelled as a dictionary and it also stores all the living individuals in their positions. The mobility model will affect the mating events, in fact, every time a female in heat randomly changes location she starts looking for a male to reproduce with and every time a male randomly changes location he starts looking for a female in heat. The mobility model also affects the fighting model, because when a predator starts to hunt, it can engage with other individuals present in its land area. 
     \end{itemize}
 
 \section{Results}
